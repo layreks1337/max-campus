@@ -1,0 +1,175 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* Тёмная тема включается классом на <html>, а не системной медиа-запросой:
+   мессенджер не всегда прокидывает системную настройку в вебвью. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─────────────────────────────────────────────────────────────────
+   Токены дизайн-системы. Светлая тема — «белая галерея» Mobbin,
+   тёмная — фотоцентричный Panora. Подробности в docs/04-design.md.
+   ───────────────────────────────────────────────────────────────── */
+
+:root {
+  --canvas: #ffffff;
+  --canvas-soft: #f3f3f3;
+  --surface: #ffffff;
+  --surface-raised: #f3f3f3;
+  --field: #f0f0f0;
+  --hairline: #e0e0e0;
+  --hairline-soft: #f0f0f0;
+
+  --ink: #141414;
+  --ink-soft: #262626;
+  --muted: #707070;
+  --faint: #adadad;
+  --inverse: #ffffff;
+
+  --accent: #0066ff;
+  --ok: #1f9d55;
+  --warn: #b26a00;
+  --danger: #c0392b;
+
+  /* В светлой теме теней нет вовсе — иерархия строится тинтами и хайрлайнами */
+  --lift: none;
+  --lift-strong: none;
+}
+
+.dark {
+  --canvas: #0e0e0f;
+  --canvas-soft: #161618;
+  --surface: #1c1c1f;
+  --surface-raised: #29292c;
+  --field: rgba(255, 255, 255, 0.06);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-soft: rgba(255, 255, 255, 0.05);
+
+  --ink: #f3f3f4;
+  --ink-soft: #e4e4e6;
+  --muted: #a1a1a6;
+  --faint: #6e6e73;
+  --inverse: #141414;
+
+  --accent: #2f7dff;
+  --ok: #35c07a;
+  --warn: #e3a008;
+  --danger: #ff6b5e;
+
+  /* На чёрном одни заливки слипаются: добавляем верхний блик и мягкую тень */
+  --lift: 0 3px 9px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --lift-strong: 0 7px 18px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 2px 0 rgba(255, 255, 255, 0.14);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-canvas-soft: var(--canvas-soft);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-field: var(--field);
+  --color-hairline: var(--hairline);
+  --color-hairline-soft: var(--hairline-soft);
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-inverse: var(--inverse);
+
+  --color-accent: var(--accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --font-sans: "Inter Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  --shadow-lift: var(--lift);
+  --shadow-lift-strong: var(--lift-strong);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   База
+   ─────────────────────────────────────────────────────────────────
+
+   ВАЖНО: всё это обязано лежать в @layer base. Стили вне слоёв сильнее
+   любых слоёв независимо от специфичности, и незалоенное
+   `button { color: inherit }` перебивало утилиту .text-canvas — текст на
+   светлых пилюлях становился белым на белом и просто исчезал.
+   ───────────────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Именно min-height, а не height: при height:100% вместе с overflow-x:hidden
+     body становится собственным скроллером, и sticky-элементы (поле ввода
+     в чате) начинают вести себя непредсказуемо. Скроллит документ. */
+  html,
+  body {
+    min-height: 100%;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: "Inter Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 450;
+    letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+    /* Вебвью не должен тянуться при скролле — выглядит как поломка */
+    overscroll-behavior-y: none;
+    /* Страховка от горизонтального сдвига: один неусекаемый блок внутри
+       карточки иначе растягивает документ, и вёрстка уезжает вправо. */
+    overflow-x: hidden;
+  }
+
+  /* Контраст веса — главный инструмент иерархии: 650 против 300 */
+  h1, h2, h3 {
+    font-weight: 650;
+    letter-spacing: 0;
+    margin: 0;
+  }
+
+  h1 { font-size: 32px; line-height: 1.05; }
+  h2 { font-size: 24px; line-height: 1.13; }
+  h3 { font-size: 20px; line-height: 1.2; }
+
+  button, input, textarea, select {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+/* Скроллбар скрываем: в мобильном вебвью он только мешает */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Безопасные зоны выреза и жеста «домой».
+   Базовый отступ включён внутрь: эти классы задают padding-top/bottom и
+   перебивают тейлвиндовские pt-*/pb-*, если поставить их рядом. */
+.safe-top { padding-top: calc(env(safe-area-inset-top, 0px) + 24px); }
+.safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
+
+@keyframes shimmer {
+  0% { opacity: 0.45; }
+  50% { opacity: 0.85; }
+  100% { opacity: 0.45; }
+}
+.shimmer { animation: shimmer 1.4s ease-in-out infinite; }
+
+@keyframes dot-pulse {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}

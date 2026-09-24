@@ -1,0 +1,66 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: campus-db
+    environment:
+      POSTGRES_USER: campus
+      POSTGRES_PASSWORD: campus
+      POSTGRES_DB: campus
+      # Локаль C.UTF-8, а не ru_RU: её нет в образе, initdb на ней падает.
+      # Полнотекстовому поиску это не мешает — конфигурация 'russian'
+      # встроена в Postgres и от системной локали не зависит.
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
+    ports:
+      # 5432 на хосте может быть занят локально установленным PostgreSQL —
+      # тогда подключение снаружи уходит не в контейнер. Держим отдельный порт.
+      - "5433:5432"
+    volumes:
+      - campus_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U campus -d campus"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: campus-app
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://campus:campus@db:5432/campus
+      DATA_DIR: /data
+      MAX_CA_BUNDLE: /app/certs/russian_trusted_bundle.pem
+    ports:
+      - "8000:8000"
+    volumes:
+      - campus_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  # Публичный HTTPS без своего домена и сертификата.
+  # Запуск:  docker compose --profile tunnel up -d
+  # Адрес появится в логах:  docker compose logs -f tunnel
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: campus-tunnel
+    profiles: ["tunnel"]
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate --url http://app:8000
+    restart: unless-stopped
+
+volumes:
+  campus_pgdata:
+  campus_data:

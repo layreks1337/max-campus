@@ -1,0 +1,43 @@
+# Секреты — критично
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Исключение: корневые сертификаты Минцифры. Они публичные, и без них
+# не собирается образ (Dockerfile копирует certs/) и не поднимается TLS
+# до platform-api2.max.ru. Их нужно коммитить.
+!certs/*.pem
+!certs/*.cer
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Временные payload-файлы для ручных проверок API
+tmp/
+
+# Данные и артефакты
+*.sqlite3
+media/
+uploads/
+generated_pdf/
+.minio/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

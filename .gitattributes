@@ -1,0 +1,17 @@
+# Перевод строки нормализуем в репозитории, но shell-скрипты и Dockerfile
+# должны оставаться с LF: с CRLF они не запускаются в Linux-контейнере.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.py        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Бинарные — не трогать
+*.ttf   binary
+*.woff2 binary
+*.png   binary
+*.jpg   binary
+*.pdf   binary
+*.cer   binary

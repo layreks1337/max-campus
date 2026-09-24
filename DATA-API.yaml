@@ -1,0 +1,224 @@
+# DATA-API.yaml — паспорт собственного API решения
+#
+# Требуется по п. 12 FAQ хакатона: решение предоставляет собственные HTTP(S)-методы,
+# которые являются частью продукта, поэтому к нему прилагаются HTTPS-адрес,
+# спецификация OpenAPI, тестовые данные и этот файл.
+
+api:
+  name: MAX Campus API
+  version: "1.0.0"
+  description: >-
+    Цифровой кампус внутри мессенджера MAX: подача заявок и выдача справок,
+    календарь вуза, конкурсы и хакатоны, ассистент на базе RAG и знакомства
+    для первокурсников.
+
+  # Адрес меняется при перезапуске туннеля — актуальный всегда в README.md
+  base_url: https://REPLACE-WITH-CURRENT-TUNNEL/api
+  openapi:
+    version: "3.1"
+    url: https://REPLACE-WITH-CURRENT-TUNNEL/api/openapi.json
+    interactive_docs: https://REPLACE-WITH-CURRENT-TUNNEL/api/docs
+
+  protocol: HTTPS
+  format: application/json; charset=utf-8
+  language: ru
+
+authentication:
+  type: MAX initData
+  description: >-
+    Каждый запрос несёт подписанную строку запуска мини-приложения.
+    Подпись проверяется на сервере по HMAC-SHA256 с ключом, производным
+    от токена бота; срок жизни строки — 15 минут.
+  header: "Authorization: MaxInitData <initData>"
+  validation:
+    algorithm: HMAC-SHA256
+    secret_derivation: HMAC_SHA256(key="WebAppData", msg=BOT_TOKEN)
+    signed_payload: >-
+      Пары key=value из WebAppData, кроме hash, отсортированные по ключу
+      и склеенные через перевод строки.
+    ttl_seconds: 900
+
+  development_mode:
+    description: >-
+      Для проверки вне мессенджера предусмотрен режим разработки:
+      вместо подписи принимается строка вида dev:<user_id>:<Name>.
+      Включается переменной ALLOW_DEV_AUTH, в продуктивной среде выключается.
+    header_example: "Authorization: MaxInitData dev:900001:Anna"
+
+authorization:
+  roles:
+    - id: STUDENT
+      description: Студент. Доступ только к собственным данным.
+    - id: STAFF_CLERK
+      description: Специалист деканата. Очередь заявок, смена статусов.
+    - id: STAFF_HEAD
+      description: Подписант. Дополнительно — выдача документов.
+    - id: ORGANIZER
+      description: Создание событий календаря.
+    - id: MODERATOR
+      description: Модерация пользовательских публикаций.
+  principles:
+    - Роль читается из справочника сотрудников, никогда из запроса клиента.
+    - Студент не может получить чужие заявки, документы или отклики.
+    - Инструменты ассистента исполняются от имени текущего пользователя;
+      параметра «чей» в их схеме нет by design.
+
+endpoints:
+  groups:
+    - name: Профиль и привязка
+      paths:
+        - GET  /api/me
+        - POST /api/binding/claim
+        - POST /api/binding/staff
+        - GET  /api/home
+        - POST /api/uploads
+    - name: Заявки и справки
+      paths:
+        - GET  /api/requests/templates
+        - GET  /api/requests/templates/{key}
+        - GET  /api/requests
+        - POST /api/requests
+        - GET  /api/requests/{public_no}
+        - POST /api/requests/{public_no}/cancel
+        - POST /api/requests/{public_no}/info
+    - name: Деканат
+      paths:
+        - GET  /api/staff/requests
+        - POST /api/staff/requests/{public_no}/transition
+        - POST /api/staff/requests/{public_no}/issue
+    - name: Календарь вуза
+      paths:
+        - GET    /api/events
+        - POST   /api/events
+        - POST   /api/events/{event_id}/register
+        - DELETE /api/events/{event_id}/register
+    - name: Возможности
+      paths:
+        - GET  /api/opportunities
+        - POST /api/opportunities
+        - POST /api/opportunities/{opp_id}/interest
+        - POST /api/opportunities/{opp_id}/looking-for-team
+        - GET  /api/moderation/queue
+        - POST /api/moderation/{opp_id}/decide
+    - name: Знакомства
+      paths:
+        - GET    /api/match/deck
+        - POST   /api/match/swipe
+        - GET    /api/match/matches
+        - GET    /api/match/intents
+        - POST   /api/match/intents
+        - DELETE /api/match/intents/{intent_id}
+        - GET    /api/match/profile
+        - PUT    /api/match/profile
+    - name: Ассистент
+      paths:
+        - POST   /api/assistant/ask
+        - GET    /api/assistant/history
+        - DELETE /api/assistant/history
+        - GET    /api/assistant/status
+    - name: Публичные
+      paths:
+        - GET  /api/health
+        - GET  /api/documents/{uuid}
+        - GET  /api/verify/{uuid}
+        - GET  /verify/{uuid}
+        - POST /webhook/max
+
+errors:
+  envelope: '{ "error": { "code": "...", "message": "...", "details": { } } }'
+  codes:
+    - code: BINDING_REQUIRED
+      http: 409
+      meaning: Студенческий не привязан, нужен онбординг.
+    - code: BAD_CODE
+      http: 404
+      meaning: Код привязки не найден или уже использован.
+    - code: FORBIDDEN
+      http: 403
+      meaning: Недостаточно прав для операции.
+    - code: VALIDATION_FAILED
+      http: 422
+      meaning: Ошибки формы; пофайловые сообщения в details.
+    - code: BAD_TRANSITION
+      http: 409
+      meaning: Недопустимый переход состояния заявки.
+    - code: REGISTRATION_CLOSED
+      http: 409
+      meaning: Регистрация на событие закрыта.
+    - code: RATE_LIMITED
+      http: 429
+      meaning: Превышен лимит попыток (например, подбор кода привязки).
+
+rate_limits:
+  - scope: Привязка студенческого
+    limit: 5 попыток в час на пользователя
+    reason: Иначе шестизначный код подбирается за минуту.
+  - scope: Исходящие сообщения в MAX
+    limit: 20 запросов в секунду
+    reason: Платформа допускает 30; держим запас.
+
+test_data:
+  disclaimer: >-
+    ВСЕ ДАННЫЕ СИНТЕТИЧЕСКИЕ. Студенты, сотрудники, события, конкурсы и тексты
+    регламентов составлены для демонстрации и не являются данными реального
+    учебного заведения. Интеграция с информационными системами вуза
+    смоделирована — см. раздел «Что смоделировано» в README.md.
+
+  student_binding_codes:
+    - code: A7K2-9M
+      student: Петрова Анна Сергеевна, 1 курс, группа Б-25-1
+    - code: B3N8-4P
+      student: Иванов Михаил Дмитриевич, 3 курс, группа Б-23-2
+    - code: C5R1-7T
+      student: Смирнова Дарья Игоревна, 1 курс, группа Б-25-1
+    - code: D9W6-2L
+      student: Кузнецов Артём Павлович, 2 курс, группа Б-24-3
+
+  staff_codes:
+    - code: STAFF-001
+      role: STAFF_CLERK
+      person: Ковалёва Ирина Петровна, специалист по учебной работе
+    - code: STAFF-002
+      role: STAFF_HEAD
+      person: Дорохов Сергей Владимирович, заместитель директора института
+
+  seeded_content:
+    request_templates: 9
+    knowledge_base_documents: 15
+    calendar_events: 7
+    opportunities: 7
+    match_intents: 12
+    demo_students: 12
+
+external_dependencies:
+  - name: MAX Bot API
+    url: https://platform-api2.max.ru
+    purpose: Доставка уведомлений и готовых документов в чат, приём обновлений бота.
+    notes: >-
+      Требует корневые сертификаты Минцифры в доверенных; в образе они лежат
+      в /app/certs и подключаются переменной MAX_CA_BUNDLE.
+  - name: Yandex Foundation Models
+    url: https://ai.api.cloud.yandex.net/v1
+    purpose: Ответы ассистента (чат и вызов инструментов).
+    notes: OpenAI-совместимый эндпоинт, модель yandexgpt/latest.
+  - name: Yandex Foundation Models — эмбеддинги
+    url: https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding
+    purpose: Векторный поиск по базе знаний.
+    notes: >-
+      Модели text-search-doc (индексация) и text-search-query (поиск),
+      размерность вектора 256.
+
+data_storage:
+  database: PostgreSQL 16 с расширением pgvector
+  files: Локальный том контейнера (/data), PDF документов и вложения заявок
+  retention: >-
+    Демонстрационная среда. Персональные данные реальных лиц не обрабатываются.
+
+deployment:
+  containerized: true
+  compose_file: docker-compose.yml
+  services:
+    - db (pgvector/pgvector:pg16)
+    - app (FastAPI + собранный фронтенд в одном образе)
+    - tunnel (cloudflared, профиль tunnel — публичный HTTPS без своего домена)
+  reproducible_start: docker compose --profile tunnel up -d --build
