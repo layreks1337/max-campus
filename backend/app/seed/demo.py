@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 
+from app.core.dates import UNIVERSITY_TZ
 from app.db.models import utcnow
 
 FACULTIES = [
@@ -80,12 +81,21 @@ def _at(days_ahead: int, hour: int, minute: int = 0):
     Раньше событиям просто прибавлялось смещение к текущему времени, и на
     демонстрации в ленте оказывалось «собрание первокурсников в 05:52».
     Час задаётся явно — расписание выглядит как настоящее.
+
+    Час — иркутский. Раньше он ставился в UTC, и ярмарка «в 11:00»
+    показывалась студенту в 19:00, а дедлайн «в 18:00» — в два часа ночи.
     """
-    base = utcnow() + timedelta(days=days_ahead)
-    return base.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    local = utcnow().astimezone(UNIVERSITY_TZ) + timedelta(days=days_ahead)
+    return local.replace(hour=hour, minute=minute, second=0, microsecond=0).astimezone(timezone.utc)
 
 
 def events() -> list[dict]:
+    from app.seed.details import EVENTS as DETAILS
+
+    return [{**e, "details_json": DETAILS.get(e["title"], {})} for e in _events()]
+
+
+def _events() -> list[dict]:
     return [
         {
             "title": "Собрание первокурсников ИМИТ",
@@ -96,7 +106,7 @@ def events() -> list[dict]:
             "ends_at": _at(1, 15, 30),
             "location": "Гагарина, 20 · ауд. 412",
             "organizer_name": "Деканат ИМИТ",
-            "cover_url": "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&q=80",
+            "cover_url": "/covers/freshmen.jpg",
             "audience_json": {"faculties": [FACULTIES[0]], "courses": [1]},
             "capacity": 60,
             "registration_required": True,
@@ -123,7 +133,7 @@ def events() -> list[dict]:
             "ends_at": _at(6, 15, 0),
             "location": "Главный корпус · холл",
             "organizer_name": "Студенческий совет",
-            "cover_url": "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80",
+            "cover_url": "/covers/fair.jpg",
             "audience_json": {"courses": [1, 2]},
             "capacity": 0,
             "registration_required": False,
@@ -137,7 +147,7 @@ def events() -> list[dict]:
             "ends_at": _at(8, 18, 0),
             "location": "Гагарина, 20 · ауд. 305",
             "organizer_name": "НСО",
-            "cover_url": "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&q=80",
+            "cover_url": "/covers/masterclass.jpg",
             "audience_json": {"courses": [2, 3, 4]},
             "capacity": 25,
             "registration_required": True,
@@ -151,7 +161,7 @@ def events() -> list[dict]:
             "ends_at": _at(11, 16, 0),
             "location": "Гагарина, 20 · конференц-зал",
             "organizer_name": "Центр карьеры",
-            "cover_url": "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&q=80",
+            "cover_url": "/covers/employers.jpg",
             "audience_json": {"faculties": [FACULTIES[0], FACULTIES[4]]},
             "capacity": 40,
             "registration_required": True,
@@ -164,7 +174,7 @@ def events() -> list[dict]:
             "ends_at": _at(14, 14, 0),
             "location": "Спорткомплекс ИГУ",
             "organizer_name": "Спортивный клуб",
-            "cover_url": "https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800&q=80",
+            "cover_url": "/covers/volleyball.jpg",
             "audience_json": {"only_freshmen": True},
             "capacity": 0,
             "registration_required": False,
@@ -185,6 +195,12 @@ def events() -> list[dict]:
 
 
 def opportunities() -> list[dict]:
+    from app.seed.details import OPPORTUNITIES as DETAILS
+
+    return [{**o, "details_json": DETAILS.get(o["title"], {})} for o in _opportunities()]
+
+
+def _opportunities() -> list[dict]:
     now = utcnow()
     return [
         {
@@ -195,7 +211,7 @@ def opportunities() -> list[dict]:
             "level": "FEDERAL",
             "organizer": "VK",
             "url": "https://dev.max.ru",
-            "cover_url": "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&q=80",
+            "cover_url": "/covers/hackathon.jpg",
             "registration_deadline": now + timedelta(days=6),
             "starts_at": now + timedelta(days=7),
             "team_size_min": 3,
@@ -213,7 +229,7 @@ def opportunities() -> list[dict]:
             "level": "FEDERAL",
             "organizer": "Минобрнауки России",
             "url": "",
-            "cover_url": "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800&q=80",
+            "cover_url": "/covers/olympiad.jpg",
             "registration_deadline": now + timedelta(days=21),
             "team_size_min": 1,
             "team_size_max": 1,
@@ -230,7 +246,7 @@ def opportunities() -> list[dict]:
             "level": "INTERNAL",
             "organizer": "Научное студенческое общество",
             "url": "",
-            "cover_url": "",
+            "cover_url": "/covers/research.jpg",
             "registration_deadline": now + timedelta(days=12),
             "team_size_min": 1,
             "team_size_max": 2,
@@ -247,7 +263,7 @@ def opportunities() -> list[dict]:
             "level": "CITY",
             "organizer": "Центр карьеры ИГУ",
             "url": "",
-            "cover_url": "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80",
+            "cover_url": "/covers/internship.jpg",
             "registration_deadline": now + timedelta(days=9),
             "team_size_min": 1,
             "team_size_max": 1,
@@ -264,7 +280,7 @@ def opportunities() -> list[dict]:
             "level": "FEDERAL",
             "organizer": "Фонд содействия инновациям",
             "url": "",
-            "cover_url": "",
+            "cover_url": "/covers/startup.jpg",
             "registration_deadline": now + timedelta(days=34),
             "team_size_min": 1,
             "team_size_max": 3,
@@ -281,7 +297,7 @@ def opportunities() -> list[dict]:
             "level": "CITY",
             "organizer": "Волонтёрский центр ИГУ",
             "url": "",
-            "cover_url": "https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&q=80",
+            "cover_url": "/covers/volunteers.jpg",
             "registration_deadline": now + timedelta(days=15),
             "team_size_min": 1,
             "team_size_max": 1,
@@ -298,7 +314,7 @@ def opportunities() -> list[dict]:
             "level": "REGIONAL",
             "organizer": "ИМИТ ИГУ",
             "url": "",
-            "cover_url": "",
+            "cover_url": "/covers/conference.jpg",
             "registration_deadline": now + timedelta(days=26),
             "team_size_min": 1,
             "team_size_max": 1,

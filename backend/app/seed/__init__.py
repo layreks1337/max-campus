@@ -18,16 +18,22 @@ from app.db.models import (
     AppUser,
     Binding,
     BindingCode,
+    Building,
     CalendarEvent,
+    GradeItem,
+    GroupHead,
+    GroupPoll,
     Intent,
     KbDocument,
     MatchProfile,
     Opportunity,
+    PollVote,
     RequestTemplate,
+    ScheduleSlot,
     Student,
     utcnow,
 )
-from app.seed import demo, knowledge, templates
+from app.seed import campus, demo, knowledge, templates
 
 log = logging.getLogger("seed")
 
@@ -126,7 +132,7 @@ async def seed_knowledge(session: AsyncSession) -> int:
 async def seed_events(session: AsyncSession) -> int:
     res = await session.execute(select(func.count(CalendarEvent.id)))
     if (res.scalar() or 0) > 0:
-        return 0
+        return await _refresh_demo(session, CalendarEvent, demo.events(), ("starts_at", "ends_at"))
 
     items = demo.events()
     for item in items:
@@ -138,13 +144,36 @@ async def seed_events(session: AsyncSession) -> int:
 async def seed_opportunities(session: AsyncSession) -> int:
     res = await session.execute(select(func.count(Opportunity.id)))
     if (res.scalar() or 0) > 0:
-        return 0
+        return await _refresh_demo(
+            session, Opportunity, demo.opportunities(), ("registration_deadline", "starts_at")
+        )
 
     items = demo.opportunities()
     for item in items:
         session.add(Opportunity(**item, moderation_status="APPROVED"))
     await session.flush()
     return len(items)
+
+async def _refresh_demo(session: AsyncSession, model, items: list[dict], date_fields: tuple) -> int:
+    """Сдвигает даты демо-записей от текущего дня и обновляет обложки.
+
+    Даты в демо заданы как «через N дней». Посчитанные один раз при первом
+    запуске, они за неделю уезжали в прошлое, и к периоду проверки афиша
+    оказывалась почти пустой. Записи ищутся по заголовку; добавленные
+    пользователями не трогаются. Записи на события сохраняются — меняется
+    только дата, не идентификатор.
+    """
+    by_title = {i["title"]: i for i in items}
+    rows = (await session.execute(select(model).where(model.title.in_(by_title)))).scalars()
+    n = 0
+    for row in rows:
+        item = by_title[row.title]
+        for field in (*date_fields, "cover_url", "details_json"):
+            if field in item:
+                setattr(row, field, item[field])
+        n += 1
+    await session.flush()
+    return n
 
 
 async def seed_demo_people(session: AsyncSession) -> int:
@@ -229,6 +258,54 @@ async def seed_demo_people(session: AsyncSession) -> int:
     await session.flush()
     return created
 
+async def seed_campus(session: AsyncSession) -> int:
+    """Расписание, баллы, корпуса и староста — каждое, только если таблица пуста."""
+    created = 0
+
+    if not (await session.execute(select(func.count(Building.id)))).scalar():
+        for b in campus.BUILDINGS:
+            session.add(Building(**b))
+            created += 1
+
+    students = list((await session.execute(select(Student))).scalars())
+
+    if not (await session.execute(select(func.count(ScheduleSlot.id)))).scalar():
+        groups = {(s.group_name, s.faculty) for s in students}
+        for group_name, faculty in sorted(groups):
+            for slot in campus.schedule_for(group_name, faculty):
+                session.add(ScheduleSlot(**slot))
+                created += 1
+
+    if not (await session.execute(select(func.count(GradeItem.id)))).scalar():
+        now = utcnow()
+        for st in students:
+            for i, g in enumerate(campus.grades_for(st.record_book_no, st.faculty)):
+                session.add(GradeItem(student_id=st.id, graded_at=now - timedelta(days=1 + i % 9), **g))
+                created += 1
+
+    if not (await session.execute(select(func.count(GroupHead.id)))).scalar():
+        head = next((s for s in students if s.record_book_no == campus.GROUP_HEAD_RECORD_BOOK), None)
+        if head:
+            session.add(GroupHead(student_id=head.id, group_name=head.group_name))
+            await session.flush()
+            # Один опрос уже есть, с голосом одногруппницы — чтобы экран не был пустым
+            poll = GroupPoll(
+                group_name=head.group_name,
+                author_student_id=head.id,
+                question="Когда удобнее отработка по матанализу?",
+                options=["Суббота, 10:00", "Среда после пар", "Онлайн"],
+                closes_at=utcnow() + timedelta(days=5),
+            )
+            session.add(poll)
+            await session.flush()
+            mates = [s for s in students if s.group_name == head.group_name and s.id != head.id]
+            for i, mate in enumerate(mates):
+                session.add(PollVote(poll_id=poll.id, student_id=mate.id, option_idx=i % 3))
+            created += 1
+
+    await session.flush()
+    return created
+
 
 async def run_seed(session: AsyncSession) -> dict[str, int]:
     """Полный проход. Возвращает счётчики созданного."""
@@ -240,6 +317,7 @@ async def run_seed(session: AsyncSession) -> dict[str, int]:
         "events": await seed_events(session),
         "opportunities": await seed_opportunities(session),
         "intents": await seed_demo_people(session),
+        "campus": await seed_campus(session),
     }
     await session.commit()
 

@@ -322,6 +322,8 @@ class CalendarEvent(Base):
     registration_deadline: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Практика: адрес, расписание, шаги участия, контакт — см. DETAILS_KEYS
+    details_json: Mapped[dict] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(String(16), default="PUBLISHED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -393,6 +395,7 @@ class Opportunity(Base):
     author_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
     moderation_status: Mapped[str] = mapped_column(String(16), default=MOD_APPROVED, index=True)
     moderated_by: Mapped[str] = mapped_column(String(160), default="")
+    details_json: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -538,6 +541,108 @@ class AiMessage(Base):
     sources_json: Mapped[list] = mapped_column(JSONB, default=list)
     tool_calls_json: Mapped[list] = mapped_column(JSONB, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Учёба: расписание, успеваемость, корпуса
+# ══════════════════════════════════════════════════════════════════
+
+
+class ScheduleSlot(Base):
+    """Пара в расписании группы. В проде приезжает из системы расписания вуза.
+
+    Время — местное (иркутское) строкой «HH:MM»: расписание вуза живёт в сетке
+    звонков, а не в абсолютном времени, и хранить его в UTC значит на ровном
+    месте получить ошибку на восемь часов.
+    """
+
+    __tablename__ = "schedule_slot"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_name: Mapped[str] = mapped_column(String(32), index=True)
+    weekday: Mapped[int] = mapped_column(Integer)  # 0 — понедельник
+    pair_no: Mapped[int] = mapped_column(Integer)
+    starts: Mapped[str] = mapped_column(String(5))
+    ends: Mapped[str] = mapped_column(String(5))
+    subject: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(24), default="Лекция")
+    teacher: Mapped[str] = mapped_column(String(120), default="")
+    room: Mapped[str] = mapped_column(String(32), default="")
+    building_code: Mapped[str] = mapped_column(String(16), default="")
+    # any — каждую неделю, odd/even — только по нечётным/чётным
+    parity: Mapped[str] = mapped_column(String(8), default="any")
+
+
+class GradeItem(Base):
+    """Контрольная точка балльно-рейтинговой системы: баллы из максимума."""
+
+    __tablename__ = "grade_item"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("student.id"), index=True)
+    subject: Mapped[str] = mapped_column(String(160))
+    title: Mapped[str] = mapped_column(String(120))
+    points: Mapped[int] = mapped_column(Integer)
+    max_points: Mapped[int] = mapped_column(Integer)
+    control: Mapped[str] = mapped_column(String(16), default="Экзамен")  # итоговая форма
+    teacher: Mapped[str] = mapped_column(String(120), default="")
+    graded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Building(Base):
+    """Учебный корпус: адрес и как найти аудиторию."""
+
+    __tablename__ = "building"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True)
+    name: Mapped[str] = mapped_column(String(160))
+    address: Mapped[str] = mapped_column(String(200))
+    lat: Mapped[float] = mapped_column(default=0.0)
+    lon: Mapped[float] = mapped_column(default=0.0)
+    hint: Mapped[str] = mapped_column(Text, default="")
+    floors: Mapped[int] = mapped_column(Integer, default=4)
+    cover_url: Mapped[str] = mapped_column(Text, default="")
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Группа: опросы старосты
+# ══════════════════════════════════════════════════════════════════
+
+
+class GroupHead(Base):
+    """Кто в группе староста. В проде — из деканата."""
+
+    __tablename__ = "group_head"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("student.id"), unique=True)
+    group_name: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class GroupPoll(Base):
+    __tablename__ = "group_poll"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_name: Mapped[str] = mapped_column(String(32), index=True)
+    author_student_id: Mapped[int] = mapped_column(ForeignKey("student.id"))
+    question: Mapped[str] = mapped_column(String(300))
+    options: Mapped[list[str]] = mapped_column(ARRAY(String(120)))
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("calendar_event.id"), nullable=True)
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PollVote(Base):
+    __tablename__ = "poll_vote"
+    __table_args__ = (UniqueConstraint("poll_id", "student_id", name="uq_poll_student"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poll_id: Mapped[int] = mapped_column(ForeignKey("group_poll.id"), index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("student.id"))
+    option_idx: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 
 
 # ══════════════════════════════════════════════════════════════════

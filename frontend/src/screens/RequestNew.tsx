@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { DynamicForm } from "@/components/DynamicForm";
+import { GlassIcon } from "@/components/ui/glass-icon";
 import { CardSkeleton, Chip } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
@@ -70,7 +71,7 @@ export default function RequestNew() {
         </button>
 
         <div className="mb-6">
-          <span className="mb-3 block text-[34px] leading-none">{active.icon}</span>
+          <GlassIcon template={active.key} size={76} className="mb-4" />
           <h1 className="mb-2 text-[26px] leading-tight">{active.title}</h1>
           <p className="text-[15px] leading-relaxed text-muted">{active.description}</p>
           <p className="mt-3 text-[13px] text-faint">
@@ -127,9 +128,7 @@ export default function RequestNew() {
                 "bg-surface p-4 text-left shadow-lift transition-transform active:scale-[0.985]",
               )}
             >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-surface-raised text-[20px]">
-                {t.icon}
-              </span>
+              <GlassIcon template={t.key} size={48} />
               <span className="min-w-0 flex-1">
                 <span className="mb-0.5 block text-[16px] leading-snug font-semibold text-ink">
                   {t.short_title}

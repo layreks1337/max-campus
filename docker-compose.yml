@@ -61,6 +61,20 @@ services:
     command: tunnel --no-autoupdate --url http://app:8000
     restart: unless-stopped
 
+  # То же, но с постоянным адресом: бесплатный статический домен ngrok.
+  # В .env нужны NGROK_AUTHTOKEN и NGROK_DOMAIN (вида xxx.ngrok-free.app).
+  # Запуск:  docker compose --profile ngrok up -d
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: campus-ngrok
+    profiles: ["ngrok"]
+    depends_on:
+      - app
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: http app:8000 --url=https://${NGROK_DOMAIN}
+    restart: unless-stopped
+
 volumes:
   campus_pgdata:
   campus_data:

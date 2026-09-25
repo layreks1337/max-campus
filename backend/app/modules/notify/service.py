@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.dates import UNIVERSITY_TZ
 from app.db.models import OUT_FAILED, OUT_PENDING, OUT_SENT, Outbox, utcnow
 from app.db.session import SessionLocal
 from app.integrations.max.client import MaxApiError, max_client, send_with_app_button
@@ -59,13 +60,16 @@ async def enqueue(
 
     next_at = utcnow()
     if respect_quiet_hours:
-        hour = next_at.hour
+        # Тихие часы — по времени студента, а не сервера: в UTC «22:00» — это
+        # шесть утра в Иркутске, и ночные сообщения уходили бы ровно в ночь.
+        local_now = next_at.astimezone(UNIVERSITY_TZ)
+        hour = local_now.hour
         if hour >= QUIET_START_HOUR:
-            next_at = (next_at + timedelta(days=1)).replace(
+            next_at = (local_now + timedelta(days=1)).replace(
                 hour=QUIET_END_HOUR, minute=5, second=0, microsecond=0
             )
         elif hour < QUIET_END_HOUR:
-            next_at = next_at.replace(hour=QUIET_END_HOUR, minute=5, second=0, microsecond=0)
+            next_at = local_now.replace(hour=QUIET_END_HOUR, minute=5, second=0, microsecond=0)
 
     item = Outbox(
         max_user_id=max_user_id,

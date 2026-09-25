@@ -122,6 +122,7 @@ def event_out(e: CalendarEvent, taken: int = 0, my_status: str | None = None) ->
         taken=taken,
         registration_required=e.registration_required,
         my_status=my_status,
+        details=e.details_json or {},
     )
 
 
@@ -153,6 +154,7 @@ def opportunity_out(
         source=o.source,
         my_interest=my_interest,
         score=score,
+        details=o.details_json or {},
     )
 
 

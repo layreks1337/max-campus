@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import App from "@/App";
 import { ToastProvider } from "@/components/ui/toast";
 import "@/index.css";
+import { installScrollMotion } from "@/shared/scroll-motion";
 
 /* MemoryRouter, а не BrowserRouter: Bridge мессенджера передаёт данные запуска
    во фрагменте URL (после #), и навигация по адресной строке с ним конфликтует.
@@ -22,6 +23,20 @@ function initialRoute(): string {
   }
   return "/";
 }
+
+/* Сохранённую тему применяем до первого рендера. В index.html по умолчанию
+   стоит class="dark", а переключатель живёт в профиле — без этой строки
+   выбранная светлая тема сбрасывалась при каждом запуске. Ключ — тот же,
+   что в Profile.tsx. */
+try {
+  if (localStorage.getItem("campus.theme") === "light") {
+    document.documentElement.classList.remove("dark");
+  }
+} catch {
+  /* нет доступа к localStorage — остаётся тёмная по умолчанию */
+}
+
+installScrollMotion();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

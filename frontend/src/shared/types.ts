@@ -130,6 +130,20 @@ export interface CampusEvent {
   taken: number;
   registration_required: boolean;
   my_status: string | null;
+  details: Details;
+}
+
+/** Практика: куда прийти, что взять, как участвовать, к кому обращаться. */
+export interface Details {
+  place?: string;
+  address?: string;
+  when_text?: string;
+  format?: string;
+  steps?: string[];
+  bring?: string[];
+  requirements?: string[];
+  perks?: string[];
+  contact?: { name: string; role?: string; where?: string };
 }
 
 export interface Opportunity {
@@ -153,6 +167,7 @@ export interface Opportunity {
   source: string;
   my_interest: string | null;
   score: number;
+  details: Details;
 }
 
 export interface Intent {
@@ -235,4 +250,127 @@ export interface ApiError {
   code: string;
   message: string;
   details?: Record<string, unknown>;
+}
+
+/* ── Учёба ─────────────────────────────────────────────────────── */
+
+export interface Slot {
+  id: number;
+  pair_no: number;
+  starts: string;
+  ends: string;
+  subject: string;
+  kind: string;
+  teacher: string;
+  room: string;
+  building_code: string;
+  building_name: string;
+}
+
+export interface ScheduleDay {
+  date: string;
+  weekday: string;
+  is_today: boolean;
+  slots: Slot[];
+}
+
+export interface Week {
+  group_name: string;
+  week_no: number;
+  parity: "odd" | "even";
+  days: ScheduleDay[];
+}
+
+export interface TodayItem {
+  kind: "pair" | "event" | "deadline" | "request";
+  time: string;
+  ends: string;
+  title: string;
+  subtitle: string;
+  state: "now" | "next" | "done" | "";
+  ref: string;
+}
+
+export interface Today {
+  date: string;
+  weekday: string;
+  week_no: number;
+  parity: "odd" | "even";
+  now: Slot | null;
+  next: Slot | null;
+  next_day_label: string;
+  items: TodayItem[];
+}
+
+export interface GradeItemInfo {
+  title: string;
+  points: number;
+  max_points: number;
+  graded_at: string;
+}
+
+export interface SubjectGrades {
+  subject: string;
+  control: string;
+  teacher: string;
+  points: number;
+  max_points: number;
+  forecast: string;
+  items: GradeItemInfo[];
+}
+
+export interface Grades {
+  semester: string;
+  total_points: number;
+  total_max: number;
+  subjects: SubjectGrades[];
+}
+
+export interface BuildingInfo {
+  code: string;
+  name: string;
+  address: string;
+  hint: string;
+  floors: number;
+  cover_url: string;
+  map_url: string;
+}
+
+export interface Ticket {
+  code: string;
+  qr_svg: string;
+  event_id: number;
+  event_title: string;
+  when: string;
+  location: string;
+  holder: string;
+  status: string;
+}
+
+export interface TicketCheck {
+  ok: boolean;
+  already: boolean;
+  holder: string;
+  group_name: string;
+  event_title: string;
+}
+
+export interface Poll {
+  id: number;
+  question: string;
+  options: string[];
+  counts: number[];
+  my_vote: number | null;
+  voted: number;
+  closes_at: string | null;
+  event_id: number | null;
+  mine: boolean;
+}
+
+export interface Group {
+  group_name: string;
+  members: number;
+  is_head: boolean;
+  head_name: string;
+  polls: Poll[];
 }

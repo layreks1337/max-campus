@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from app.api import (
     routes_assistant,
+    routes_campus,
     routes_core,
     routes_feed,
     routes_match,
@@ -46,6 +47,12 @@ async def _prepare_database() -> None:
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # create_all создаёт только новые таблицы, колонки в существующие не
+        # добавляет. Миграций в проекте нет — точечные ALTER идемпотентны.
+        for table in ("calendar_event", "opportunity"):
+            await conn.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS details_json JSONB NOT NULL DEFAULT '{{}}'"
+            ))
     log.info("Схема БД готова")
 
 
@@ -157,6 +164,8 @@ app.include_router(routes_feed.opps_router, prefix="/api")
 app.include_router(routes_feed.moderation_router, prefix="/api")
 app.include_router(routes_match.router, prefix="/api")
 app.include_router(routes_assistant.router, prefix="/api")
+app.include_router(routes_campus.router, prefix="/api")
+app.include_router(routes_campus.public_router)
 
 
 # ── Раздача собранного фронтенда ──────────────────────────────────

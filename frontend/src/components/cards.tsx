@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import { CalendarDays, Clock, MapPin, Users } from "lucide-react";
 import { useState } from "react";
 import { Card, Chip, StatusDot } from "@/components/ui/primitives";
+import { GlassIcon } from "@/components/ui/glass-icon";
 import type { CampusEvent, CampusRequest, Intent, Opportunity } from "@/shared/types";
 import {
   cn,
@@ -35,7 +36,7 @@ const COVER_GRADIENTS = [
  *  Внешние картинки — самая ненадёжная часть демонстрации: если Unsplash
  *  не ответит, карточка обязана остаться читаемой, а не показывать
  *  сломанную иконку. */
-function Cover({ src, title }: { src: string; title: string }) {
+export function Cover({ src, title }: { src: string; title: string }) {
   const [failed, setFailed] = useState(false);
   const hash = Array.from(title).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   const gradient = COVER_GRADIENTS[hash % COVER_GRADIENTS.length];
@@ -83,10 +84,12 @@ export function RequestCard({
         <span className="shrink-0 font-mono text-[12px] text-faint">№{request.public_no}</span>
       </div>
 
-      <p className="mb-1 text-[17px] leading-snug font-semibold break-words text-ink">
-        <span className="mr-1.5">{request.icon}</span>
-        {request.title}
-      </p>
+      <div className="mb-1 flex items-center gap-3">
+        <GlassIcon template={request.template_key} size={40} />
+        <p className="min-w-0 text-[17px] leading-snug font-semibold break-words text-ink">
+          {request.title}
+        </p>
+      </div>
 
       {showStudent && request.student_name && (
         <p className="mb-1 text-[13px] text-muted">
@@ -131,7 +134,7 @@ export function EventCard({
       <motion.button
         onClick={onClick}
         whileTap={{ scale: 0.985 }}
-        className="relative mb-3 block h-[200px] w-full overflow-hidden rounded-[24px] text-left"
+        className="reveal relative mb-3 block h-[200px] w-full overflow-hidden rounded-[24px] text-left"
       >
         <Cover src={event.cover_url} title={event.title} />
         {/* Затемнение обязательно: на светлых снимках белый текст иначе не читается */}
@@ -199,9 +202,13 @@ export function EventCard({
 export function OpportunityCard({
   opportunity,
   onClick,
+  layoutId,
+  hidden,
 }: {
   opportunity: Opportunity;
   onClick?: () => void;
+  layoutId?: string;
+  hidden?: boolean;
 }) {
   const soon = opportunity.days_left !== null && opportunity.days_left <= 7;
   const deadline =
@@ -216,7 +223,12 @@ export function OpportunityCard({
       <motion.button
         onClick={onClick}
         whileTap={{ scale: 0.985 }}
-        className="relative mb-3 block h-[210px] w-full overflow-hidden rounded-[24px] text-left"
+        layoutId={layoutId}
+        transition={{ type: "spring", stiffness: 260, damping: 30 }}
+        className={cn(
+          "reveal relative mb-3 block h-[210px] w-full overflow-hidden rounded-[24px] text-left",
+          hidden && "invisible",
+        )}
       >
         <Cover src={opportunity.cover_url} title={opportunity.title} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/10" />
@@ -263,45 +275,63 @@ export function OpportunityCard({
 
 /* ── Карточка в колоде ─────────────────────────────────────────── */
 
+const INTENT_GRADIENTS: Record<string, string> = {
+  STUDY_BUDDY: "linear-gradient(140deg,#1e3a8a 0%,#2f7dff 100%)",
+  MENTOR: "linear-gradient(140deg,#14532d 0%,#35c07a 100%)",
+  TEAM: "linear-gradient(140deg,#581c87 0%,#a855f7 100%)",
+  HOBBY: "linear-gradient(140deg,#7c2d12 0%,#f97316 100%)",
+  COMMUTE: "linear-gradient(140deg,#0f766e 0%,#2dd4bf 100%)",
+  MENTEE: "linear-gradient(140deg,#713f12 0%,#e3a008 100%)",
+};
+
+/** Карточка в колоде «Люди» — в том же постерном языке, что и афиша:
+ *  цветная шапка по типу объявления, крупный заголовок, автор внизу. */
 export function IntentCard({ intent }: { intent: Intent }) {
+  const hash = Array.from(intent.kind).reduce((a, c) => a + c.charCodeAt(0), 0);
+  const gradient = INTENT_GRADIENTS[intent.kind] ?? COVER_GRADIENTS[hash % COVER_GRADIENTS.length];
   return (
-    <div className="flex h-full w-full flex-col justify-between rounded-[24px] border border-hairline bg-surface p-6 shadow-lift-strong">
-      <div>
-        <Chip tone="accent" className="mb-4">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-[28px] border border-hairline bg-surface shadow-lift-strong">
+      <div className="relative shrink-0 px-6 pt-6 pb-7 text-white" style={{ background: gradient }}>
+        <span className="relative inline-flex rounded-full bg-black/25 px-3 py-1.5 text-[12px] font-semibold backdrop-blur-sm">
           {intent.kind_title}
-        </Chip>
-
-        <p className="mb-3 text-[26px] leading-[1.12] font-[650] text-ink">{intent.title}</p>
-
-        <p className="mb-4 line-clamp-6 text-[15px] leading-relaxed text-muted">
-          {intent.description}
-        </p>
-
-        {intent.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {intent.tags.slice(0, 4).map((t) => (
-              <Chip key={t} tone="soft">
-                #{t}
-              </Chip>
-            ))}
-          </div>
-        )}
+        </span>
+        <p className="relative mt-4 line-clamp-3 text-[26px] leading-[1.1] font-[700]">{intent.title}</p>
       </div>
 
-      <div className="mt-6 flex items-center gap-3 border-t border-hairline-soft pt-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-raised text-[15px] font-semibold text-ink">
-          {intent.author_photo ? (
-            <img src={intent.author_photo} alt="" className="h-full w-full object-cover" />
-          ) : (
-            intent.author_name.slice(0, 1).toUpperCase()
+      <div className="flex min-h-0 flex-1 flex-col justify-between p-6 pt-5">
+        <div className="min-h-0">
+          <p className="mb-4 line-clamp-5 text-[15px] leading-relaxed text-muted">
+            {intent.description}
+          </p>
+          {intent.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {intent.tags.slice(0, 4).map((t) => (
+                <Chip key={t} tone="soft">
+                  #{t}
+                </Chip>
+              ))}
+            </div>
           )}
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-[15px] font-semibold text-ink">{intent.author_name}</p>
-          <p className="truncate text-[13px] text-faint">
-            {intent.author_course ? `${intent.author_course} курс` : ""}
-            {intent.author_faculty ? ` · ${shortFaculty(intent.author_faculty)}` : ""}
-          </p>
+
+        <div className="mt-5 flex items-center gap-3 border-t border-hairline-soft pt-4">
+          <div
+            className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-[16px] font-semibold text-white"
+            style={{ background: gradient }}
+          >
+            {intent.author_photo ? (
+              <img src={intent.author_photo} alt="" className="h-full w-full object-cover" />
+            ) : (
+              intent.author_name.slice(0, 1).toUpperCase()
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-semibold text-ink">{intent.author_name}</p>
+            <p className="truncate text-[13px] text-faint">
+              {intent.author_course ? `${intent.author_course} курс` : ""}
+              {intent.author_faculty ? ` · ${shortFaculty(intent.author_faculty)}` : ""}
+            </p>
+          </div>
         </div>
       </div>
     </div>

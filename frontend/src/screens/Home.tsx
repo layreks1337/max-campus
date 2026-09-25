@@ -1,15 +1,18 @@
-/** Главная — лента: активные заявки, ближайшие события, рекомендации, вход в матчинг. */
+/** Главная — афиша событий и конкурсов, активные заявки, рекомендации, вход в матчинг. */
 
 import { ArrowRight, ChevronRight, Sparkles, Users } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { EventCard, OpportunityCard, RequestCard, shortFaculty } from "@/components/cards";
+import { Afisha, ItemOverlay, type Item, opportunityItem } from "@/components/afisha";
+import { DayTimeline, LinkRow, NowCard, PollCard, QuickActions } from "@/components/campus";
+import { OpportunityCard, RequestCard, shortFaculty } from "@/components/cards";
 import { Button } from "@/components/ui/button";
 import { Card, CardSkeleton, Chip, Empty, Section } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
-import type { Home as HomeData, Me } from "@/shared/types";
+import type { Group, Home as HomeData, Me, Poll, Today } from "@/shared/types";
 import { plural } from "@/shared/utils";
 
 export default function Home({ me }: { me: Me }) {
@@ -18,7 +21,13 @@ export default function Home({ me }: { me: Me }) {
   const navigate = useNavigate();
   const toast = useToast();
 
+  const [today, setToday] = useState<Today | null>(null);
+  const [group, setGroup] = useState<Group | null>(null);
+
   const load = useCallback(async () => {
+    // Учебные блоки грузятся отдельно: их сбой не должен ронять всю главную
+    api.today().then(setToday).catch(() => setToday(null));
+    api.group().then(setGroup).catch(() => setGroup(null));
     try {
       setData(await api.home());
     } catch (e) {
@@ -33,10 +42,30 @@ export default function Home({ me }: { me: Me }) {
   }, [load]);
 
   const student = me.student;
+  const [openRec, setOpenRec] = useState<{ index: number; key: string } | null>(null);
+  const recItems = useMemo<Item[]>(
+    () => (data?.recommended ?? []).slice(0, 3).map(opportunityItem),
+    [data],
+  );
+  const updateRec = (next: Item) => {
+    if (next.kind !== "opportunity") return;
+    setData((d) =>
+      d
+        ? {
+            ...d,
+            recommended: d.recommended.map((o) => (o.id === next.opportunity.id ? next.opportunity : o)),
+          }
+        : d,
+    );
+  };
+  // На главной — самый свежий опрос, на который ещё не ответили
+  const openPoll = group?.polls.find((p) => p.my_vote === null) ?? null;
+  const replacePoll = (p: Poll) =>
+    setGroup((g) => (g ? { ...g, polls: g.polls.map((x) => (x.id === p.id ? p : x)) } : g));
 
   return (
     <div className="px-4 pb-28 safe-top">
-      <header className="mb-7 flex items-start justify-between gap-4 px-1">
+      <header className="scroll-fade mb-6 flex items-start justify-between gap-4 px-1">
         <div className="min-w-0">
           <h1 className="mb-1 text-[30px] leading-tight">
             {data?.greeting ?? `Привет, ${student?.first_name ?? ""}`}
@@ -61,6 +90,30 @@ export default function Home({ me }: { me: Me }) {
           )}
         </button>
       </header>
+
+      {today && <NowCard today={today} />}
+      <QuickActions />
+
+      <Afisha />
+
+      {today && today.items.length > 0 && (
+        <Section title="Сегодня">
+          <DayTimeline today={today} />
+        </Section>
+      )}
+
+      {openPoll && (
+        <Section
+          title="Группа спрашивает"
+          action={<LinkRow label="все" onClick={() => navigate("/group")} />}
+        >
+          <PollCard
+            poll={openPoll}
+            onChange={replacePoll}
+            onError={(m) => toast.error(m)}
+          />
+        </Section>
+      )}
 
       {loading ? (
         <>
@@ -109,14 +162,6 @@ export default function Home({ me }: { me: Me }) {
             </Section>
           )}
 
-          {data && data.upcoming_events.length > 0 && (
-            <Section title="Ближайшее">
-              {data.upcoming_events.map((e) => (
-                <EventCard key={e.id} event={e} onClick={() => navigate("/")} />
-              ))}
-            </Section>
-          )}
-
           {data && data.recommended.length > 0 && (
             <Section
               title="Стоит посмотреть"
@@ -126,8 +171,14 @@ export default function Home({ me }: { me: Me }) {
                 </Chip>
               }
             >
-              {data.recommended.slice(0, 3).map((o) => (
-                <OpportunityCard key={o.id} opportunity={o} />
+              {data.recommended.slice(0, 3).map((o, i) => (
+                <OpportunityCard
+                  key={o.id}
+                  opportunity={o}
+                  layoutId={`rec-o${o.id}`}
+                  hidden={openRec?.index === i && openRec.key === `o${o.id}`}
+                  onClick={() => setOpenRec({ index: i, key: `o${o.id}` })}
+                />
               ))}
             </Section>
           )}
@@ -168,6 +219,19 @@ export default function Home({ me }: { me: Me }) {
             )}
         </>
       )}
+
+      <AnimatePresence>
+        {openRec && recItems.length > 0 && (
+          <ItemOverlay
+            items={recItems}
+            index={openRec.index}
+            prefix="rec"
+            onIndex={(index) => setOpenRec((o) => (o ? { ...o, index } : o))}
+            onClose={() => setOpenRec(null)}
+            onChange={updateRec}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

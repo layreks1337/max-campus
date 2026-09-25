@@ -34,7 +34,7 @@ export default function People() {
 
   return (
     <div className="px-4 pb-28 safe-top">
-      <header className="mb-4 px-1">
+      <header className="scroll-fade mb-4 px-1">
         <h1>Люди</h1>
       </header>
 

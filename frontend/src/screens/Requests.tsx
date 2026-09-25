@@ -39,7 +39,7 @@ export default function Requests() {
 
   return (
     <div className="px-4 pb-28 safe-top">
-      <header className="mb-5 flex items-center justify-between gap-3 px-1">
+      <header className="scroll-fade mb-5 flex items-center justify-between gap-3 px-1">
         <h1>Заявки</h1>
         <Button size="sm" onClick={() => navigate("/requests/new")}>
           <Plus size={16} /> Новая

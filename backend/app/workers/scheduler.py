@@ -149,6 +149,62 @@ async def deadline_reminders() -> int:
     return sent
 
 
+async def class_reminders() -> int:
+    """За 15 минут до первой пары дня — куда идти. Только первая пара:
+    напоминание перед каждой превратилось бы в спам и его бы отключили."""
+    from app.core.dates import UNIVERSITY_TZ
+    from app.db.models import ScheduleSlot, Student
+
+    sent = 0
+    now_local = utcnow().astimezone(UNIVERSITY_TZ)
+    minutes = now_local.hour * 60 + now_local.minute
+    today = now_local.date()
+    week_no = max(1, (today - _academic_start(today)).days // 7 + 1)
+    parity = "odd" if week_no % 2 else "even"
+
+    async with SessionLocal() as session:
+        res = await session.execute(
+            select(ScheduleSlot).where(ScheduleSlot.weekday == today.weekday())
+            .order_by(ScheduleSlot.group_name, ScheduleSlot.pair_no)
+        )
+        first: dict[str, ScheduleSlot] = {}
+        for slot in res.scalars():
+            if slot.parity in ("any", parity):
+                first.setdefault(slot.group_name, slot)
+
+        for group, slot in first.items():
+            h, m = slot.starts.split(":")
+            until = int(h) * 60 + int(m) - minutes
+            if not 5 <= until <= 20:
+                continue
+            res = await session.execute(
+                select(AppUser.max_user_id, Student.id)
+                .join(Binding, Binding.app_user_id == AppUser.id)
+                .join(Student, Student.id == Binding.student_id)
+                .where(Student.group_name == group)
+            )
+            place = f"ауд. {slot.room}" if slot.room[:1].isdigit() else slot.room
+            text = f"📚 Через {until} мин — {slot.subject}\n{slot.kind} · {place} · {slot.starts}"
+            for max_id, student_id in res.all():
+                created = await enqueue(
+                    session, max_user_id=max_id, kind="CLASS_REMINDER", text=text,
+                    dedup_key=f"class:{student_id}:{today.isoformat()}",
+                    open_app_label="Расписание",
+                )
+                if created:
+                    sent += 1
+        await session.commit()
+    return sent
+
+
+def _academic_start(d):
+    from datetime import date
+
+    year = d.year if d.month >= 9 else d.year - 1
+    start = date(year, 9, 1)
+    return start - timedelta(days=start.weekday())
+
+
 async def buddy_and_cleanup() -> None:
     async with SessionLocal() as session:
         try:
@@ -185,4 +241,5 @@ def start_background_tasks() -> list[asyncio.Task]:
             _loop("deadline_reminders", deadline_reminders, 3600), name="deadlines"
         ),
         asyncio.create_task(_loop("buddy", buddy_and_cleanup, 1800), name="buddy"),
+        asyncio.create_task(_loop("class_reminders", class_reminders, 240), name="classes"),
     ]

@@ -37,7 +37,7 @@ export default function Profile({
 
   return (
     <div className="px-4 pb-28 safe-top">
-      <header className="mb-6 flex items-center gap-4 px-1">
+      <header className="scroll-fade mb-6 flex items-center gap-4 px-1">
         <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-raised text-[24px] font-[650] text-ink">
           {me.photo_url ? (
             <img src={me.photo_url} alt="" className="h-full w-full object-cover" />

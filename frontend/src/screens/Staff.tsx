@@ -4,7 +4,8 @@
  *  стороны — студент подаёт, сотрудник выдаёт, студенту приходит PDF —
  *  и есть главный аргумент продукта. */
 
-import { Inbox, Send } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Inbox, ScanLine, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { RequestCard } from "@/components/cards";
@@ -13,8 +14,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { CardSkeleton, Chip, Divider, Empty } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
-import type { CampusRequest, Me } from "@/shared/types";
-import { dateTimeRu, STATUS_TITLES } from "@/shared/utils";
+import type { CampusRequest, Me, TicketCheck } from "@/shared/types";
+import { cn, dateTimeRu, haptic, STATUS_TITLES } from "@/shared/utils";
 
 const FILTERS = [
   { key: "", label: "Все в работе" },
@@ -48,12 +49,14 @@ export default function Staff({ me }: { me: Me }) {
 
   return (
     <div className="px-4 pb-28 safe-top">
-      <header className="mb-4 px-1">
+      <header className="scroll-fade mb-4 px-1">
         <h1 className="mb-1">Деканат</h1>
         <p className="text-[14px] text-muted">
           {me.staff?.full_name} · {me.staff?.department}
         </p>
       </header>
+
+      <TicketChecker />
 
       <div className="no-scrollbar mb-5 flex gap-2 overflow-x-auto px-1 pb-1">
         {FILTERS.map((f) => (
@@ -264,5 +267,66 @@ function StaffSheet({
         </>
       )}
     </Sheet>
+  );
+}
+
+/** Проверка билета на входе: код с экрана студента — отметка о проходе. */
+function TicketChecker() {
+  const [code, setCode] = useState("");
+  const [result, setResult] = useState<TicketCheck | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const check = async () => {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      setResult(await api.checkTicket(code));
+      setCode("");
+      haptic();
+    } catch (e) {
+      setError(e instanceof ApiException ? e.message : "Не удалось проверить билет");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mb-5 rounded-[24px] border border-hairline-soft bg-surface p-4 shadow-lift">
+      <p className="mb-3 flex items-center gap-2 px-1 text-[15px] font-semibold text-ink">
+        <ScanLine size={18} className="text-accent" /> Проверка билетов
+      </p>
+      <div className="flex gap-2">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === "Enter" && code.length > 3 && void check()}
+          placeholder="Код, например T12-ABCDE"
+          className="min-w-0 flex-1 rounded-[14px] bg-field px-4 py-3 font-mono text-[15px] text-ink outline-none placeholder:font-sans placeholder:text-faint"
+        />
+        <Button onClick={check} disabled={code.length < 4} loading={busy}>
+          Отметить
+        </Button>
+      </div>
+      <AnimatePresence mode="popLayout">
+        {(result || error) && (
+          <motion.div
+            key={result ? `ok-${result.holder}` : `err-${error}`}
+            initial={{ opacity: 0, y: -8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className={cn(
+              "mt-3 rounded-[14px] px-4 py-3 text-[14px] leading-snug",
+              error ? "bg-danger/10 text-danger" : result?.already ? "bg-warn/10 text-warn" : "bg-ok/10 text-ok",
+            )}
+          >
+            {error ||
+              (result &&
+                `${result.already ? "Уже проходил(а): " : "✓ Проход отмечен: "}${result.holder}, ${result.group_name} — ${result.event_title}`)}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

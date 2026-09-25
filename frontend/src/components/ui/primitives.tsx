@@ -27,7 +27,7 @@ export function Card({
       whileTap={interactive ? { scale: 0.985 } : undefined}
       transition={{ type: "spring", stiffness: 420, damping: 32 }}
       className={cn(
-        "w-full rounded-[24px] bg-surface text-left",
+        "reveal w-full rounded-[24px] bg-surface text-left",
         "border border-hairline-soft shadow-lift",
         padded && "p-5",
         className,
@@ -53,7 +53,7 @@ export function Section({
 }) {
   return (
     <section className={cn("mb-7", className)}>
-      <div className="mb-3 flex items-baseline justify-between gap-3 px-1">
+      <div className="reveal mb-3 flex items-baseline justify-between gap-3 px-1">
         <h2 className="text-[20px] leading-tight">{title}</h2>
         {action}
       </div>

@@ -4,7 +4,7 @@
  *  читается заметно лучше. Пузырь остаётся только у реплики студента. */
 
 import { motion } from "framer-motion";
-import { ArrowUp, FileText, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowUp, FileText, Loader2, Mic, RotateCcw, Sparkles, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -12,7 +12,8 @@ import { Chip } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import type { AssistantAction, ChatMessage, Me, Source } from "@/shared/types";
-import { cn } from "@/shared/utils";
+import { cn, haptic } from "@/shared/utils";
+import { type Recorder, startRecording, voiceSupported } from "@/shared/voice";
 
 interface Bubble extends ChatMessage {
   pending?: boolean;
@@ -214,7 +215,7 @@ export default function Chat({ me }: { me: Me }) {
       </div>
 
       <div className="sticky bottom-0 bg-gradient-to-t from-canvas via-canvas to-transparent px-5 pt-3 pb-24">
-        <div className="flex items-end gap-2 rounded-[22px] bg-field p-1.5">
+        <div className="flex items-end gap-2 rounded-[22px] bg-surface-raised p-1.5">
           <textarea
             ref={inputRef}
             value={input}
@@ -229,6 +230,13 @@ export default function Chat({ me }: { me: Me }) {
             placeholder="Спросите что-нибудь"
             className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] text-ink placeholder:text-faint outline-none"
           />
+          {!input.trim() && voiceSupported() && (
+            <MicButton
+              disabled={busy}
+              onText={(text) => void send(text)}
+              onError={(m) => toast.error(m)}
+            />
+          )}
           <button
             onClick={() => send(input)}
             disabled={!input.trim() || busy}
@@ -272,5 +280,97 @@ function Thinking() {
         />
       ))}
     </div>
+  );
+}
+
+/** Голосовой вопрос: тап — запись, второй тап — распознать и отправить.
+ *  Кольцо вокруг кнопки дышит громкостью голоса — видно, что микрофон слышит. */
+function MicButton({
+  disabled,
+  onText,
+  onError,
+}: {
+  disabled: boolean;
+  onText: (text: string) => void;
+  onError: (message: string) => void;
+}) {
+  const [state, setState] = useState<"idle" | "rec" | "busy">("idle");
+  const [level, setLevel] = useState(0);
+  const rec = useRef<Recorder | null>(null);
+
+  useEffect(() => {
+    if (state !== "rec") return;
+    let raf = 0;
+    const tick = () => {
+      setLevel(rec.current?.level() ?? 0);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    // Страховка: запись дольше 30 секунд всё равно обрезается сервером
+    const limit = setTimeout(() => void toggle(), 30_000);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(limit);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  useEffect(() => () => rec.current?.cancel(), []);
+
+  const toggle = async () => {
+    if (state === "idle") {
+      try {
+        rec.current = await startRecording();
+        setState("rec");
+        haptic();
+      } catch {
+        onError("Нет доступа к микрофону — разрешите его в настройках");
+      }
+      return;
+    }
+    if (state !== "rec" || !rec.current) return;
+    setState("busy");
+    try {
+      const pcm = await rec.current.stop();
+      rec.current = null;
+      const { text } = await api.transcribe(pcm);
+      if (text) onText(text);
+      else onError("Не расслышал — попробуйте ещё раз");
+    } catch (e) {
+      onError(e instanceof ApiException ? e.message : "Не удалось распознать речь");
+    } finally {
+      setState("idle");
+      setLevel(0);
+    }
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={disabled || state === "busy"}
+      aria-label={state === "rec" ? "Остановить запись" : "Спросить голосом"}
+      className={cn(
+        "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
+        state === "rec" ? "bg-danger text-white" : "text-muted",
+      )}
+    >
+      {state === "rec" && (
+        <motion.span
+          aria-hidden
+          className="absolute inset-0 rounded-full bg-danger/30"
+          animate={{ scale: 1 + level * 0.9 }}
+          transition={{ type: "spring", stiffness: 500, damping: 20 }}
+        />
+      )}
+      <span className="relative">
+        {state === "busy" ? (
+          <Loader2 size={19} className="animate-spin" />
+        ) : state === "rec" ? (
+          <Square size={15} fill="currentColor" />
+        ) : (
+          <Mic size={20} />
+        )}
+      </span>
+    </button>
   );
 }

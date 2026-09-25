@@ -167,6 +167,7 @@ class EventOut(BaseModel):
     taken: int
     registration_required: bool
     my_status: str | None = None
+    details: dict = {}
 
 
 class EventCreateIn(BaseModel):
@@ -206,6 +207,7 @@ class OpportunityOut(BaseModel):
     source: str
     my_interest: str | None = None
     score: float = 0.0
+    details: dict = {}
 
 
 class OpportunityCreateIn(BaseModel):

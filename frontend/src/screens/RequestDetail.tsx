@@ -3,11 +3,13 @@
  *  Степпер — главный ответ на боль «отправил письмо и сижу в тишине»:
  *  видно, где заявка сейчас, кто её вёл и сколько осталось. */
 
-import { Download, FileCheck2, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Check, Download, FileCheck2, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { GlassIcon } from "@/components/ui/glass-icon";
 import { ConfirmSheet, Sheet } from "@/components/ui/sheet";
 import { Card, CardSkeleton, Chip, Divider, StatusDot } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
@@ -16,6 +18,7 @@ import { openExternal } from "@/shared/max";
 import type { CampusRequest } from "@/shared/types";
 import {
   cn,
+  haptic,
   dateFullRu,
   dateTimeRu,
   relativeDay,
@@ -90,6 +93,7 @@ export default function RequestDetail() {
 
   return (
     <div className="px-4 pb-28 safe-top">
+      <Celebrate request={request} />
       <header className="mb-6 px-1">
         <div className="mb-2 flex items-center gap-2">
           <StatusDot tone={tone} pulse={request.is_active} />
@@ -100,10 +104,10 @@ export default function RequestDetail() {
             №{request.public_no}
           </span>
         </div>
-        <h1 className="text-[26px] leading-tight">
-          <span className="mr-2">{request.icon}</span>
-          {request.title}
-        </h1>
+        <div className="flex items-center gap-4">
+          <GlassIcon template={request.template_key} size={64} />
+          <h1 className="min-w-0 text-[26px] leading-tight">{request.title}</h1>
+        </div>
       </header>
 
       {request.status === "NEEDS_INFO" && (
@@ -238,7 +242,10 @@ function Stepper({ request }: { request: CampusRequest }) {
         return (
           <div key={status} className="flex gap-3">
             <div className="flex w-4 shrink-0 flex-col items-center">
-              <span
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.12 * i, type: "spring", stiffness: 500, damping: 22 }}
                 className={cn(
                   "mt-1.5 h-2.5 w-2.5 rounded-full",
                   done ? (current ? `bg-${tone === "accent" ? "accent" : "ok"}` : "bg-ok") : "bg-hairline",
@@ -251,13 +258,17 @@ function Stepper({ request }: { request: CampusRequest }) {
                 }
               />
               {!last && (
-                <span
-                  className="w-px flex-1"
-                  style={{
-                    background: done && i < currentIndex ? "var(--ok)" : "var(--hairline)",
-                    minHeight: 26,
-                  }}
-                />
+                <span className="relative w-px flex-1" style={{ background: "var(--hairline)", minHeight: 26 }}>
+                  {done && i < currentIndex && (
+                    <motion.span
+                      className="absolute inset-0 origin-top"
+                      style={{ background: "var(--ok)" }}
+                      initial={{ scaleY: 0 }}
+                      animate={{ scaleY: 1 }}
+                      transition={{ delay: 0.12 * i + 0.08, duration: 0.35, ease: "easeOut" }}
+                    />
+                  )}
+                </span>
               )}
             </div>
 
@@ -318,4 +329,83 @@ function formatValue(v: unknown): string {
   // Имя загруженного файла бессмысленно показывать целиком
   if (/^\d+_[0-9a-f]{12}\.\w+$/.test(s)) return "файл приложен";
   return s;
+}
+
+/* ── Справка готова ────────────────────────────────────────────── */
+
+const CONFETTI = ["#2f7dff", "#35c07a", "#e3a008", "#ff6b5e", "#a855f7", "#ffffff"];
+
+/** Готовый документ — кульминация сценария, и выглядеть он должен как событие.
+ *  Показывается один раз на заявку: повторное конфетти при каждом входе
+ *  раздражало бы. */
+function Celebrate({ request }: { request: CampusRequest }) {
+  const ready = request.status === "READY" || request.status === "ISSUED";
+  const key = `campus.celebrated.${request.public_no}`;
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
+    } catch {
+      /* без localStorage празднуем каждый раз — не страшно */
+    }
+    setShow(true);
+    haptic();
+    const t = setTimeout(() => setShow(false), 2600);
+    return () => clearTimeout(t);
+  }, [ready, key]);
+
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: 44 }, (_, i) => ({
+        x: (Math.random() - 0.5) * 360,
+        y: -(160 + Math.random() * 260),
+        r: Math.random() * 540 - 270,
+        c: CONFETTI[i % CONFETTI.length],
+        w: 6 + Math.random() * 6,
+        d: Math.random() * 0.15,
+      })),
+    [],
+  );
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          className="pointer-events-none fixed inset-0 z-[96] flex items-center justify-center"
+          exit={{ opacity: 0, transition: { duration: 0.4 } }}
+        >
+          <motion.div
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 16 }}
+            className="flex flex-col items-center rounded-[32px] bg-ink/90 px-8 py-7 text-canvas backdrop-blur-md"
+          >
+            <motion.span
+              initial={{ rotate: -90, scale: 0 }}
+              animate={{ rotate: 0, scale: 1 }}
+              transition={{ delay: 0.15, type: "spring", stiffness: 260, damping: 14 }}
+              className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-ok text-white"
+            >
+              <Check size={34} strokeWidth={3} />
+            </motion.span>
+            <p className="text-[20px] font-[700]">Справка готова</p>
+            <p className="mt-1 text-[13px] opacity-70">PDF уже в чате с ботом</p>
+          </motion.div>
+          {pieces.map((p, i) => (
+            <motion.span
+              key={i}
+              className="absolute top-1/2 left-1/2 rounded-[2px]"
+              style={{ width: p.w, height: p.w * 0.45, background: p.c }}
+              initial={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
+              animate={{ x: p.x, y: [0, p.y, p.y + 520], rotate: p.r, opacity: [1, 1, 0] }}
+              transition={{ duration: 2.2, delay: p.d, ease: [0.2, 0.7, 0.4, 1], times: [0, 0.35, 1] }}
+            />
+          ))}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 }

@@ -16,7 +16,10 @@ import { api, ApiException } from "@/shared/api";
 import { getStartParam, isInsideMax, ready, setBackButton } from "@/shared/max";
 import type { Me } from "@/shared/types";
 
+import Campus from "@/screens/Campus";
 import Chat from "@/screens/Chat";
+import Grades from "@/screens/Grades";
+import Group from "@/screens/Group";
 import Home from "@/screens/Home";
 import Onboarding from "@/screens/Onboarding";
 import People from "@/screens/People";
@@ -24,6 +27,7 @@ import Profile from "@/screens/Profile";
 import RequestDetail from "@/screens/RequestDetail";
 import RequestNew from "@/screens/RequestNew";
 import Requests from "@/screens/Requests";
+import Schedule from "@/screens/Schedule";
 import Staff from "@/screens/Staff";
 
 const STUDENT_TABS: TabItem[] = [
@@ -73,6 +77,11 @@ export default function App() {
       navigate(`/requests/new/${param.slice("request_".length)}`);
     } else if (param === "events") {
       navigate("/");
+    } else if (param.startsWith("event_")) {
+      // Карточка события, пересланная в чат: сразу раскрываем её в афише
+      navigate("/", { state: { openEvent: Number(param.slice("event_".length)) } });
+    } else if (["schedule", "grades", "campus", "group"].includes(param)) {
+      navigate(`/${param}`);
     }
   }, [me?.is_bound, navigate]);
 
@@ -117,12 +126,11 @@ export default function App() {
   if (!me?.is_bound) return <Onboarding onBound={setMe} />;
 
   return (
-    <div className="min-h-dvh bg-canvas">
-      {/* Анимации перехода между экранами намеренно нет.
-          Контейнер, который стартует с opacity 0 и ждёт кадра анимации, при
-          троттлинге вебвью оставляет пользователя перед пустым экраном.
-          Отдельные элементы внутри экранов анимируются — этого достаточно. */}
-      <main className="mx-auto w-full max-w-[560px]">
+    <div className="min-h-dvh">
+      {/* Переход между экранами — CSS-анимация по ключу пути. Стартует не с
+          нулевой прозрачности: если вебвью притормозит кадры, экран всё равно
+          виден, а не пуст, как было с JS-анимацией онбординга. */}
+      <main key={location.pathname} className="screen-in mx-auto w-full max-w-[560px]">
         <Routes location={location}>
           <Route path="/" element={<Home me={me} />} />
           <Route path="/requests" element={<Requests />} />
@@ -133,6 +141,10 @@ export default function App() {
           <Route path="/chat" element={<Chat me={me} />} />
           <Route path="/staff" element={<Staff me={me} />} />
           <Route path="/profile" element={<Profile me={me} onChange={setMe} />} />
+          <Route path="/schedule" element={<Schedule />} />
+          <Route path="/grades" element={<Grades />} />
+          <Route path="/campus" element={<Campus />} />
+          <Route path="/group" element={<Group />} />
           <Route path="*" element={<Home me={me} />} />
         </Routes>
       </main>

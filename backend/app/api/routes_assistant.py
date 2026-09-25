@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+import httpx
+from fastapi import APIRouter, HTTPException, Request as HttpRequest
 from sqlalchemy import select
 
 from app.api.schemas import (
@@ -95,3 +96,40 @@ async def assistant_status() -> dict:
         "model": settings.LLM_MODEL_MAIN if settings.llm_enabled else None,
         "suggestions": SUGGESTIONS,
     }
+
+
+# ── Голосовой вопрос ──────────────────────────────────────────────
+
+MAX_AUDIO_BYTES = 16_000 * 2 * 30  # 30 секунд моно PCM 16 кГц
+
+
+@router.post("/transcribe", summary="Распознать голосовой вопрос")
+async def transcribe(request: HttpRequest, current: BoundUserDep) -> dict:
+    """Приложение пишет звук в PCM 16 кГц прямо в браузере и шлёт сюда сырые
+    байты — SpeechKit принимает их без перекодирования, а формат WebM,
+    который отдаёт MediaRecorder, он не понимает."""
+    if not settings.llm_enabled:
+        raise HTTPException(503, detail={"code": "UNAVAILABLE", "message": "Распознавание речи не настроено"})
+    audio = await request.body()
+    if len(audio) < 3200:
+        raise HTTPException(422, detail={"code": "TOO_SHORT", "message": "Запись слишком короткая"})
+    audio = audio[:MAX_AUDIO_BYTES]
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            resp = await client.post(
+                "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize",
+                params={
+                    "folderId": settings.YC_FOLDER_ID,
+                    "lang": "ru-RU",
+                    "format": "lpcm",
+                    "sampleRateHertz": 16000,
+                },
+                headers={"Authorization": f"Api-Key {settings.YC_API_KEY}"},
+                content=audio,
+            )
+        resp.raise_for_status()
+        text = (resp.json().get("result") or "").strip()
+    except httpx.HTTPError as exc:
+        log.warning("SpeechKit недоступен: %s", exc)
+        raise HTTPException(502, detail={"code": "STT_FAILED", "message": "Не удалось распознать речь"})
+    return {"text": text}

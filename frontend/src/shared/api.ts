@@ -4,16 +4,24 @@
 import { getAuthToken } from "@/shared/max";
 import type {
   AskResult,
+  BuildingInfo,
   CampusEvent,
   CampusRequest,
   ChatHistory,
+  Grades,
+  Group,
   Home,
   Intent,
   Match,
   MatchProfile,
   Me,
   Opportunity,
+  Poll,
   Template,
+  Ticket,
+  TicketCheck,
+  Today,
+  Week,
 } from "@/shared/types";
 
 export class ApiException extends Error {
@@ -51,7 +59,11 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const headers: Record<string, string> = { Authorization: `MaxInitData ${getAuthToken()}` };
+  const headers: Record<string, string> = {
+    Authorization: `MaxInitData ${getAuthToken()}`,
+    // Бесплатный ngrok иначе может отдать вместо JSON страницу-предупреждение.
+    "ngrok-skip-browser-warning": "1",
+  };
   let payload: BodyInit | undefined;
 
   if (body instanceof FormData) {
@@ -153,7 +165,35 @@ export const api = {
   matchProfile: () => get<MatchProfile>("/match/profile"),
   saveMatchProfile: (p: MatchProfile) => put<MatchProfile>("/match/profile", p),
 
+  // ── Учёба и группа ─────────────────────────────────────────────
+  today: () => get<Today>("/today"),
+  schedule: (week = 0) => get<Week>(`/schedule?week=${week}`),
+  grades: () => get<Grades>("/grades"),
+  buildings: () => get<BuildingInfo[]>("/buildings"),
+  ticket: (eventId: number) => get<Ticket>(`/events/${eventId}/ticket`),
+  checkTicket: (code: string) => post<TicketCheck>("/staff/tickets/check", { code }),
+  shareEvent: (eventId: number) =>
+    post<{ sent_to_chat: boolean; text: string; link: string }>(`/events/${eventId}/share`),
+  group: () => get<Group>("/group"),
+  createPoll: (question: string, options: string[], event_id?: number) =>
+    post<Poll>("/group/polls", { question, options, event_id }),
+  vote: (pollId: number, option_idx: number) =>
+    post<Poll>(`/group/polls/${pollId}/vote`, { option_idx }),
+
   // ── Ассистент ──────────────────────────────────────────────────
+  transcribe: async (pcm: ArrayBuffer) => {
+    const resp = await fetch("/api/assistant/transcribe", {
+      method: "POST",
+      headers: {
+        Authorization: `MaxInitData ${getAuthToken()}`,
+        "Content-Type": "application/octet-stream",
+        "ngrok-skip-browser-warning": "1",
+      },
+      body: pcm,
+    });
+    if (!resp.ok) throw new ApiException(resp.status, "STT_FAILED", "Не удалось распознать речь");
+    return (await resp.json()) as { text: string };
+  },
   ask: (question: string) => post<AskResult>("/assistant/ask", { question }),
   chatHistory: () => get<ChatHistory>("/assistant/history"),
   clearChat: () => del<{ ok: boolean }>("/assistant/history"),

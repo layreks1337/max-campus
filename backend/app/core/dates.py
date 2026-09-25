@@ -8,7 +8,16 @@ UnicodeEncodeError. Поэтому в strftime уходят только ASCII-�
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+# Иркутск, UTC+8, без перехода на летнее время. Фиксированное смещение, а не
+# ZoneInfo: в slim-образе может не оказаться базы часовых поясов.
+UNIVERSITY_TZ = timezone(timedelta(hours=8))
+
+
+def local(dt: datetime) -> datetime:
+    """Время вуза. Всё, что видит человек, показывается по Иркутску."""
+    return dt.astimezone(UNIVERSITY_TZ) if dt.tzinfo else dt
 
 MONTHS_GEN = [
     "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -35,11 +44,13 @@ def date_short(dt: datetime) -> str:
 
 def when_ru(dt: datetime) -> str:
     """23.09 в 17:00 — основной формат для уведомлений о событиях."""
+    dt = local(dt)
     return f"{dt.strftime('%d.%m')} в {dt.strftime('%H:%M')}"
 
 
 def when_full_ru(dt: datetime) -> str:
     """23 сентября в 17:00"""
+    dt = local(dt)
     return f"{dt.day} {MONTHS_GEN[dt.month - 1]} в {dt.strftime('%H:%M')}"
 
 

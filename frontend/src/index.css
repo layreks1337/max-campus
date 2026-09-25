@@ -158,7 +158,7 @@
 
 /* Безопасные зоны выреза и жеста «домой».
    Базовый отступ включён внутрь: эти классы задают padding-top/bottom и
-   перебивают тейлвиндовские pt-*/pb-*, если поставить их рядом. */
+   перебивают тейлвиндовские pt-N и pb-N, если поставить их рядом. */
 .safe-top { padding-top: calc(env(safe-area-inset-top, 0px) + 24px); }
 .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
 
@@ -172,4 +172,95 @@
 @keyframes dot-pulse {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Анимации при прокрутке
+   ─────────────────────────────────────────────────────────────────
+
+   Два механизма, выбирает src/shared/scroll-motion.ts:
+   — .sda: браузер умеет animation-timeline — прогресс привязан к скроллу,
+     анимация не может «застрять» при троттлинге вебвью;
+   — .js-reveal: не умеет — IntersectionObserver ставит .is-in, дальше
+     обычный CSS-переход.
+   Без JS и без поддержки контент просто стоит на месте.
+
+   Сдвиг задан свойствами translate/scale, а не transform: framer-motion
+   пишет transform инлайном (нажатие на карточку), и анимация иначе
+   перебила бы его. Конечное значение — none: любое другое делает элемент
+   контейнером для position: fixed потомков. */
+
+@keyframes reveal-rise {
+  from { opacity: 0; translate: 0 56px; scale: 0.92; }
+  to { opacity: 1; translate: none; scale: none; }
+}
+
+@keyframes reveal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scroll-away {
+  to { opacity: 0; translate: 0 -32px; scale: 0.94; }
+}
+
+@keyframes carousel-recede {
+  to { opacity: 0.35; scale: 0.9; translate: 0 40px; }
+}
+
+.sda .reveal {
+  animation: reveal-rise linear both;
+  animation-timeline: view();
+  animation-range: entry 0% cover 30%;
+}
+
+.sda .scroll-fade {
+  animation: scroll-away linear both;
+  animation-timeline: scroll(root);
+  animation-range: 0 180px;
+  transform-origin: top left;
+}
+
+/* Карусель афиши отъезжает вглубь, когда страницу листают дальше */
+.sda .scroll-recede {
+  animation: carousel-recede linear both;
+  animation-timeline: scroll(root);
+  animation-range: 260px 760px;
+}
+
+.js-reveal .reveal {
+  opacity: 0;
+  translate: 0 56px;
+  scale: 0.92;
+  transition:
+    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    translate 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    scale 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.js-reveal .reveal.is-in {
+  opacity: 1;
+  translate: none;
+  scale: none;
+}
+
+/* При «уменьшить движение» — только проявление, без сдвигов */
+@media (prefers-reduced-motion: reduce) {
+  .sda .reveal { animation-name: reveal-fade; }
+  .sda .scroll-fade,
+  .sda .scroll-recede { animation: none; }
+  .js-reveal .reveal { translate: none; scale: none; }
+}
+
+/* Вход экрана при смене вкладки. Только transform и opacity, без fill:
+   после окончания у элемента не остаётся translate, иначе он стал бы
+   контейнером для position: fixed шторок внутри экрана. */
+@keyframes screen-in {
+  from { opacity: 0.35; translate: 0 14px; }
+  to { opacity: 1; translate: none; }
+}
+.screen-in { animation: screen-in 0.38s cubic-bezier(0.22, 1, 0.36, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-in { animation-name: reveal-fade; animation-duration: 0.2s; }
 }
