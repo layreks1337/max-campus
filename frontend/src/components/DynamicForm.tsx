@@ -198,7 +198,8 @@ export function DynamicForm({
         }
       })}
 
-      <div className="sticky bottom-0 -mx-5 mt-2 bg-gradient-to-t from-canvas via-canvas to-transparent px-5 pt-4 pb-24">
+      {/* Нижнего меню на экране формы нет (App.tsx) — отступ только до жеста «домой» */}
+      <div className="sticky bottom-0 -mx-5 mt-2 bg-gradient-to-t from-canvas via-canvas to-transparent px-5 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+16px)]">
         <Button full size="lg" loading={sending} onClick={submit}>
           {instant ? "Получить PDF сразу" : "Отправить заявку"}
         </Button>

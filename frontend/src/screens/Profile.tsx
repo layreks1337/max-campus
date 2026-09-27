@@ -55,7 +55,8 @@ export default function Profile({
           )}
         </div>
         <div className="min-w-0">
-          <h1 className="mb-0.5 truncate text-[24px] leading-tight">
+          {/* ФИО переносится на вторую строку, а не обрезается: «Петрова Анна Серге…» */}
+          <h1 className="mb-0.5 line-clamp-2 text-[24px] leading-tight break-words">
             {s?.full_name ?? me.display_name}
           </h1>
           {s && (
@@ -115,11 +116,11 @@ export default function Profile({
           </span>
           <span
             className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-              dark ? "bg-accent" : "bg-surface-raised"
+              dark ? "bg-accent" : "bg-faint/70"
             }`}
           >
             <span
-              className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${
+              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-all ${
                 dark ? "left-6" : "left-1"
               }`}
             />

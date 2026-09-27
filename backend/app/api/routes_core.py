@@ -23,6 +23,7 @@ from app.api.schemas import (
     StaffOut,
 )
 from app.core.config import settings
+from app.core.dates import local
 from app.core.deps import BoundUserDep, CurrentUser, CurrentUserDep, SessionDep
 from app.db.models import (
     ACTIVE_STATUSES,
@@ -364,7 +365,8 @@ async def home(current: BoundUserDep, session: SessionDep) -> HomeOut:
     )
     matches = res.scalar() or 0
 
-    hour = now.hour
+    # Час по Иркутску, а не по UTC: иначе утром студент видел «Доброй ночи»
+    hour = local(now).hour
     if 5 <= hour < 12:
         greet = "Доброе утро"
     elif 12 <= hour < 18:

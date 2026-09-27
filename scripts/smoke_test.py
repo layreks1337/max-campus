@@ -261,10 +261,32 @@ if isinstance(mine, dict):
         print(f"         · {ev['status_title']:24} {who}")
 
 section("8. Очередь уведомлений")
+
+
+def irkutsk_greeting() -> str:
+    """Приветствие по часу Иркутска (UTC+8) — так же считает сервер."""
+    hour = time.gmtime(time.time() + 8 * 3600).tm_hour
+    if 5 <= hour < 12:
+        return "Доброе утро"
+    if 12 <= hour < 18:
+        return "Добрый день"
+    if 18 <= hour < 23:
+        return "Добрый вечер"
+    return "Доброй ночи"
+
+
+greet_before = irkutsk_greeting()
 status, home = call("GET", "/api/home", STUDENT)
+greet_after = irkutsk_greeting()
 check("главный экран собирается", status == 200, str(home)[:200])
 if isinstance(home, dict):
     print(f"       {home['greeting']}")
+    # Раньше час брался по UTC, и утром в Иркутске выходило «Доброй ночи»
+    check(
+        "приветствие по времени вуза, а не по UTC",
+        home["greeting"].startswith((greet_before, greet_after)),
+        f"ждали «{greet_after}», получили «{home['greeting']}»",
+    )
     print(f"       активных заявок: {len(home['active_requests'])}, "
           f"событий: {len(home['upcoming_events'])}, "
           f"рекомендаций: {len(home['recommended'])}, "

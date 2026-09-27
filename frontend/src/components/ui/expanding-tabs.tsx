@@ -70,8 +70,10 @@ export function ExpandingTabs({
                 "relative flex h-11 shrink-0 cursor-pointer items-center justify-start",
                 "overflow-hidden rounded-full pl-3 outline-none",
                 "focus-visible:ring-2 focus-visible:ring-accent",
+                // В светлой теме surface-raised совпадал с фоном бара и активная
+                // вкладка терялась среди белых — даём ей заметно более тёмную заливку
                 isActive
-                  ? "gap-2 bg-surface-raised pr-4 shadow-lift-strong"
+                  ? "gap-2 bg-[#dedee2] pr-4 shadow-lift-strong dark:bg-surface-raised"
                   : "w-11 bg-surface shadow-lift",
               )}
             >

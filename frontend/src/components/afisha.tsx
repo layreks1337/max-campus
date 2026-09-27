@@ -108,20 +108,38 @@ function buildItems(events: CampusEvent[], opps: Opportunity[]): Item[] {
     .sort((a, b) => (parseDate(a.date)?.getTime() ?? 0) - (parseDate(b.date)?.getTime() ?? 0));
 }
 
+/** Дедлайн — янтарный: срок, который нельзя пропустить, а не очередное событие. */
+const DEADLINE_GRADIENT = "linear-gradient(135deg,#7a5210 0%,#2a1c05 100%)";
+
+function isDeadline(item: Item): boolean {
+  return item.kind === "event" && item.event.kind === "DEADLINE";
+}
+
+/** Фон обложки без фото: у дедлайна свой, у остальных — по названию. */
+function gradientOf(item: Item): string | undefined {
+  return isDeadline(item) ? DEADLINE_GRADIENT : undefined;
+}
+
 /** Обложка: фото, а если его нет — типографский постер с крупным числом.
- *  Пустой градиент на весь экран выглядел как незагрузившаяся картинка. */
+ *  Пустой градиент на весь экран выглядел как незагрузившаяся картинка.
+ *
+ *  Число стоит целиком внутри видимой рамки: в карусели обложка шире карточки
+ *  на 40 px с каждой стороны (запас под параллакс), и раньше «2» обрезалась
+ *  по краю, а над ней было «ОКТ · 18:00» без самого дня. */
 function Art({ item, big }: { item: Item; big?: boolean }) {
   const cover = coverOf(item);
   if (cover) return <Cover src={cover} title={titleOf(item)} />;
   const d = parseDate(item.date);
+  const deadline = isDeadline(item);
   return (
     <>
-      <Cover src="" title={titleOf(item)} />
+      <Cover src="" title={titleOf(item)} gradient={gradientOf(item)} />
       <span
         aria-hidden
         className={cn(
-          "absolute top-[8%] right-[-4%] leading-none font-[800] tracking-tighter text-white/[0.09] select-none",
-          big ? "text-[340px]" : "text-[210px]",
+          "absolute leading-none font-[800] tracking-tighter select-none",
+          deadline ? "text-amber-200/[0.14]" : "text-white/[0.09]",
+          big ? "top-[14%] right-5 text-[260px]" : "top-[16%] right-[52px] text-[170px]",
         )}
       >
         {d?.getDate()}
@@ -129,11 +147,12 @@ function Art({ item, big }: { item: Item; big?: boolean }) {
       <span
         aria-hidden
         className={cn(
-          "absolute font-[750] tracking-[0.2em] text-white/40 uppercase",
-          big ? "top-24 left-5 text-[15px]" : "top-16 left-[60px] text-[12px]",
+          "absolute font-[750]",
+          deadline ? "text-amber-300" : "text-white/60",
+          big ? "top-24 left-5 text-[17px]" : "top-16 left-[60px] text-[14px]",
         )}
       >
-        {d ? `${MONTHS_SHORT[d.getMonth()]} · ${timeRu(item.date)}` : ""}
+        {d ? `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} · ${timeRu(item.date)}` : ""}
       </span>
     </>
   );
@@ -415,7 +434,7 @@ function Glow({ item }: { item: Item | undefined }) {
           transition={{ duration: 0.6, ease: "easeOut" }}
           className="absolute inset-[12%] scale-110 blur-[48px] saturate-150"
         >
-          <Cover src={coverOf(item)} title={titleOf(item)} />
+          <Cover src={coverOf(item)} title={titleOf(item)} gradient={gradientOf(item)} />
         </motion.div>
       </AnimatePresence>
     </div>
@@ -659,7 +678,9 @@ function Detail({
                 >
                   <Art item={item} big />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/30" />
-                  <div className="absolute inset-x-0 bottom-0 p-5">
+                  {/* Снизу 48 px: текст карточки наезжает на обложку на 28 px (-mt-7
+                      в Body) и раньше срезал последнюю строку заголовка */}
+                  <div className="absolute inset-x-0 bottom-0 px-5 pt-5 pb-12">
                     <div className="mb-3 flex flex-wrap gap-1.5">
                       <Chip tone="overlay">{tagOf(item)}</Chip>
                       <Chip tone="overlay">{relativeDay(item.date)}</Chip>
@@ -683,7 +704,7 @@ function Detail({
               className="reveal mx-5 mt-2 mb-[calc(env(safe-area-inset-bottom,0px)+28px)] flex w-[calc(100%-40px)] items-center gap-3 overflow-hidden rounded-[20px] bg-surface-raised p-2.5 pr-4 text-left"
             >
               <span className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[14px]">
-                <Cover src={coverOf(next)} title={titleOf(next)} />
+                <Cover src={coverOf(next)} title={titleOf(next)} gradient={gradientOf(next)} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[12px] font-semibold text-muted">Дальше · {dateRu(next.date)}</span>
@@ -977,19 +998,24 @@ function EventExtras({ event, onError }: { event: CampusEvent; onError: (m: stri
 
   return (
     <>
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      {/* Без регистрации билета не бывает — неактивная кнопка только сбивала */}
+      <div
+        className={cn("mt-3 grid gap-2", event.registration_required ? "grid-cols-3" : "grid-cols-2")}
+      >
         <ExtraButton icon={<Share2 size={18} />} label="Поделиться" onClick={share} />
         <ExtraButton
           icon={<CalendarPlus size={18} />}
           label="В календарь"
           onClick={() => openExternal(`${window.location.origin}/ics/event/${event.id}.ics`)}
         />
-        <ExtraButton
-          icon={<QrCode size={18} />}
-          label="Мой билет"
-          onClick={openTicket}
-          disabled={!registered}
-        />
+        {event.registration_required && (
+          <ExtraButton
+            icon={<QrCode size={18} />}
+            label="Мой билет"
+            onClick={openTicket}
+            disabled={!registered}
+          />
+        )}
       </div>
       <AnimatePresence>
         {note && (
@@ -1092,10 +1118,10 @@ function Reveal({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Обычный регистр, а не капс: заголовок блока читается, а не кричит
+ *  (правило docs/04-design.md). */
 function BlockTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-3 text-[13px] font-semibold tracking-[0.08em] text-muted uppercase">{children}</p>
-  );
+  return <p className="mb-3 text-[17px] leading-tight font-semibold text-ink">{children}</p>;
 }
 
 function DetailsBlock({ details }: { details: Details | undefined }) {

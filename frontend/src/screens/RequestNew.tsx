@@ -5,7 +5,7 @@
 
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { DynamicForm } from "@/components/DynamicForm";
 import { GlassIcon } from "@/components/ui/glass-icon";
@@ -17,8 +17,12 @@ import { cn, plural } from "@/shared/utils";
 
 export default function RequestNew() {
   const { key } = useParams<{ key: string }>();
+  // Шаблон, выбранный в каталоге, приходит вместе с переходом: форма
+  // открывается сразу, без мигания списка, пока шаблоны грузятся заново
+  const picked = (useLocation().state as { template?: Template } | null)?.template;
+  const preset = picked && picked.key === key ? picked : null;
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [active, setActive] = useState<Template | null>(null);
+  const [active, setActive] = useState<Template | null>(preset);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState<string>("Все");
   const navigate = useNavigate();
@@ -59,11 +63,13 @@ export default function RequestNew() {
 
   if (active) {
     return (
-      <div className="px-5 pb-28 safe-top">
+      <div className="px-5 pb-2 safe-top">
         <button
           onClick={() => {
-            setActive(null);
-            if (key) navigate("/requests/new", { replace: true });
+            // Пришли из каталога — просто шаг назад, иначе история копила бы
+            // по лишней записи каталога на каждый просмотренный шаблон
+            if (preset) navigate(-1);
+            else navigate("/requests/new", { replace: true });
           }}
           className="mb-5 flex items-center gap-1.5 text-[14px] text-muted"
         >
@@ -130,7 +136,9 @@ export default function RequestNew() {
           {visible.map((t) => (
             <button
               key={t.key}
-              onClick={() => setActive(t)}
+              // Отдельный адрес формы, а не состояние экрана: на нём скрыто
+              // нижнее меню (App.tsx), и системная «Назад» ведёт в каталог
+              onClick={() => navigate(`/requests/new/${t.key}`, { state: { template: t } })}
               className={cn(
                 "flex items-center gap-4 rounded-[20px] border border-hairline-soft",
                 "bg-surface p-4 text-left shadow-lift transition-transform active:scale-[0.985]",

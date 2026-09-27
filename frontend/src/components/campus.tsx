@@ -96,6 +96,22 @@ export function NowCard({ today }: { today: Today }) {
   );
 }
 
+/** Заглушка на месте карточки пары, пока грузится расписание. Та же форма
+ *  и высота: без неё карточка появлялась позже остальной главной и сдвигала
+ *  весь экран вниз прямо под пальцем. */
+export function NowCardSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="shimmer mb-3 h-[150px] w-full rounded-[28px] bg-surface-raised p-5"
+    >
+      <div className="mb-3 h-3 w-28 rounded-full bg-ink/10" />
+      <div className="mb-4 h-6 w-3/4 rounded-full bg-ink/10" />
+      <div className="h-3 w-1/2 rounded-full bg-ink/10" />
+    </div>
+  );
+}
+
 function capitalize(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }

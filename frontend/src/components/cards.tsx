@@ -36,10 +36,19 @@ const COVER_GRADIENTS = [
  *  Внешние картинки — самая ненадёжная часть демонстрации: если Unsplash
  *  не ответит, карточка обязана остаться читаемой, а не показывать
  *  сломанную иконку. */
-export function Cover({ src, title }: { src: string; title: string }) {
+export function Cover({
+  src,
+  title,
+  gradient: fixed,
+}: {
+  src: string;
+  title: string;
+  /** Свой фон вместо градиента по названию — например, янтарный у дедлайнов. */
+  gradient?: string;
+}) {
   const [failed, setFailed] = useState(false);
   const hash = Array.from(title).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  const gradient = COVER_GRADIENTS[hash % COVER_GRADIENTS.length];
+  const gradient = fixed ?? COVER_GRADIENTS[hash % COVER_GRADIENTS.length];
 
   return (
     <>

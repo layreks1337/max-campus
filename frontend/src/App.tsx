@@ -49,6 +49,22 @@ const STAFF_TAB: TabItem = { key: "/staff", label: "Деканат", icon: Brief
 /** Корневые экраны: на них системная кнопка «Назад» не нужна. */
 const ROOTS = new Set(["/", "/requests", "/people", "/chat", "/staff"]);
 
+/** Форма заявки и карточка заявки: нижнее меню перекрывало кнопку
+ *  «Отправить» и поле под ней, а уйти отсюда можно системной «Назад».
+ *  Каталог шаблонов (/requests/new) — обычный экран, меню на нём остаётся. */
+const hidesTabs = (path: string): boolean =>
+  path.startsWith("/requests/") && path !== "/requests/new";
+
+/** Плашка «DEV · вне MAX» — только по ?debug=1: на каждом экране она наезжала
+ *  на заголовок и попадала бы в видео демонстрации. */
+const isDebug = (): boolean => {
+  try {
+    return new URLSearchParams(window.location.search).get("debug") === "1";
+  } catch {
+    return false;
+  }
+};
+
 export default function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,13 +189,15 @@ export default function App() {
         </Routes>
       </main>
 
-      <ExpandingTabs
-        tabs={tabs}
-        active={activeTab}
-        onChange={(key) => navigate(key)}
-      />
+      {!hidesTabs(location.pathname) && (
+        <ExpandingTabs
+          tabs={tabs}
+          active={activeTab}
+          onChange={(key) => navigate(key)}
+        />
+      )}
 
-      {!isInsideMax() && (isLinkSession() ? <LinkBadge /> : <DevBadge />)}
+      {!isInsideMax() && (isLinkSession() ? <LinkBadge /> : isDebug() && <DevBadge />)}
     </div>
   );
 }
@@ -251,8 +269,8 @@ function SessionExpired() {
   );
 }
 
-/** Видимая метка, что приложение открыто вне мессенджера.
- *  Без неё легко перепутать dev-режим с настоящим запуском. */
+/** Видимая метка, что приложение открыто вне мессенджера, — для отладки
+ *  (?debug=1). Тестовый пользователь и так виден в профиле. */
 function DevBadge() {
   return (
     <div className="pointer-events-none fixed top-2 left-2 z-[90] rounded-full bg-warn/15 px-2.5 py-1 text-[10px] font-semibold text-warn">

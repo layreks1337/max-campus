@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import { openExternal } from "@/shared/max";
 import type { BuildingInfo } from "@/shared/types";
+import { plural } from "@/shared/utils";
 
 export default function Campus() {
   const [items, setItems] = useState<BuildingInfo[] | null>(null);
@@ -37,8 +38,9 @@ export default function Campus() {
         <p className="text-[14px] text-muted">Где что находится и как добраться</p>
       </header>
 
-      <div className="reveal mb-6 rounded-[24px] bg-surface p-4 shadow-lift">
-        <label className="flex items-center gap-3 rounded-[14px] bg-field px-4 py-3">
+      {/* Поле поиска без карточки-обёртки: вложенная рамка в рамке только шумела */}
+      <div className="reveal mb-6">
+        <label className="flex items-center gap-3 rounded-[16px] bg-field px-4 py-3.5">
           <Search size={18} className="text-muted" />
           <input
             value={room}
@@ -82,11 +84,14 @@ export default function Campus() {
             <div className="p-4">
               <p className="mb-4 text-[14px] leading-relaxed text-ink-soft">{b.hint}</p>
               <div className="flex items-center justify-between">
-                <span className="text-[13px] text-muted">{b.floors} этажей</span>
+                <span className="text-[13px] text-muted">
+                  {b.floors} {plural(b.floors, "этаж", "этажа", "этажей")}
+                </span>
                 <motion.button
                   whileTap={{ scale: 0.96 }}
                   onClick={() => openExternal(b.map_url)}
-                  className="flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-[14px] font-semibold text-canvas"
+                  // Мягкая, а не главная: четыре белые кнопки подряд спорили друг с другом
+                  className="flex items-center gap-2 rounded-full bg-surface-raised px-4 py-2.5 text-[14px] font-semibold text-ink"
                 >
                   <Navigation size={15} /> Маршрут
                 </motion.button>

@@ -7,7 +7,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Afisha, ItemOverlay, type Item, opportunityItem } from "@/components/afisha";
-import { DayTimeline, LinkRow, NowCard, PollCard, QuickActions } from "@/components/campus";
+import {
+  DayTimeline,
+  LinkRow,
+  NowCard,
+  NowCardSkeleton,
+  PollCard,
+  QuickActions,
+} from "@/components/campus";
 import { OpportunityCard, RequestCard, shortFaculty } from "@/components/cards";
 import { Button } from "@/components/ui/button";
 import { GlassIcon } from "@/components/ui/glass-icon";
@@ -24,11 +31,16 @@ export default function Home({ me }: { me: Me }) {
   const toast = useToast();
 
   const [today, setToday] = useState<Today | null>(null);
+  const [todayLoading, setTodayLoading] = useState(true);
   const [group, setGroup] = useState<Group | null>(null);
 
   const load = useCallback(async () => {
     // Учебные блоки грузятся отдельно: их сбой не должен ронять всю главную
-    api.today().then(setToday).catch(() => setToday(null));
+    api
+      .today()
+      .then(setToday)
+      .catch(() => setToday(null))
+      .finally(() => setTodayLoading(false));
     api.group().then(setGroup).catch(() => setGroup(null));
     try {
       setData(await api.home());
@@ -70,7 +82,7 @@ export default function Home({ me }: { me: Me }) {
       <header className="scroll-fade mb-6 flex items-start justify-between gap-4 px-1">
         <div className="min-w-0">
           <h1 className="mb-1 text-[30px] leading-tight">
-            {data?.greeting ?? `Привет, ${student?.first_name ?? ""}`}
+            {data?.greeting ?? `${greetingNow()}, ${student?.first_name ?? ""}`}
           </h1>
           {student && (
             <p className="truncate text-[14px] text-muted">
@@ -93,7 +105,7 @@ export default function Home({ me }: { me: Me }) {
         </button>
       </header>
 
-      {today && <NowCard today={today} />}
+      {today ? <NowCard today={today} /> : todayLoading && <NowCardSkeleton />}
       <CertificateCard />
       <QuickActions />
 
@@ -220,6 +232,17 @@ export default function Home({ me }: { me: Me }) {
       </AnimatePresence>
     </div>
   );
+}
+
+/** То же приветствие, что считает сервер (по Иркутску, UTC+8), — пока грузится
+ *  главная. Раньше здесь было «Привет, Анна», и через секунду заголовок
+ *  менялся на «Доброе утро, Анна» с переносом на вторую строку. */
+function greetingNow(): string {
+  const hour = new Date(Date.now() + 8 * 3600_000).getUTCHours();
+  if (hour >= 5 && hour < 12) return "Доброе утро";
+  if (hour >= 12 && hour < 18) return "Добрый день";
+  if (hour >= 18 && hour < 23) return "Добрый вечер";
+  return "Доброй ночи";
 }
 
 /** Главный сценарий продукта — сразу под ближайшей парой, а не в конце ленты:

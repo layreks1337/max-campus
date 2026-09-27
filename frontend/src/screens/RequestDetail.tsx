@@ -6,7 +6,7 @@
  *  проигрывает её шаги по очереди (useReplay). */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Download, FileCheck2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Check, Download, FileCheck2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
@@ -16,7 +16,7 @@ import { ConfirmSheet, Sheet } from "@/components/ui/sheet";
 import { Card, CardSkeleton, Chip, Divider, StatusDot } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
-import { openExternal } from "@/shared/max";
+import { isInsideMax, openExternal } from "@/shared/max";
 import type { CampusRequest } from "@/shared/types";
 import {
   cn,
@@ -103,6 +103,16 @@ export default function RequestDetail() {
   return (
     <div className="px-4 pb-28 safe-top">
       {!replaying && <Celebrate request={request} />}
+      {/* Нижнего меню на этом экране нет (App.tsx). В MAX назад ведёт системная
+          кнопка, а в браузере её нет — без этой ссылки отсюда было бы не уйти */}
+      {!isInsideMax() && (
+        <button
+          onClick={() => (location.key === "default" ? navigate("/requests") : navigate(-1))}
+          className="mb-5 flex items-center gap-1.5 px-1 text-[14px] text-muted"
+        >
+          <ArrowLeft size={16} /> Назад
+        </button>
+      )}
       <header className="mb-6 px-1">
         <div className="mb-2 flex items-center gap-2">
           <StatusDot tone={tone} pulse={request.is_active || replaying} />

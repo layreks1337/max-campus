@@ -224,15 +224,17 @@ export function SwitchField({
         className="flex w-full items-center justify-between gap-4 rounded-[16px] bg-field px-4 py-3 text-left"
       >
         <span className="text-[15px] leading-snug text-ink">{label}</span>
+        {/* Выключенная дорожка — faint, а не surface-raised: в светлой теме
+            белый кружок на светлой дорожке в светлом поле был почти не виден */}
         <span
           className={cn(
             "relative h-7 w-12 shrink-0 rounded-full transition-colors",
-            value ? "bg-accent" : "bg-surface-raised",
+            value ? "bg-accent" : "bg-faint/70",
           )}
         >
           <span
             className={cn(
-              "absolute top-1 h-5 w-5 rounded-full bg-white transition-all",
+              "absolute top-1 h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-all",
               value ? "left-6" : "left-1",
             )}
           />
