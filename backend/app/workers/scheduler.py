@@ -13,6 +13,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.dates import when_ru
 from app.db.models import (
     REG_REGISTERED,
@@ -216,6 +217,29 @@ async def buddy_and_cleanup() -> None:
             log.exception("Сбой в buddy/cleanup")
 
 
+async def ensure_webhook() -> None:
+    """Держит подписку бота на вебхук этого сервера.
+
+    MAX молча отписывает бота, если вебхук 8 часов подряд не отвечает 200 —
+    после перезагрузки сервера или сбоя бот замолчал бы насовсем. А при смене
+    адреса старые подписки не заменяются, а копятся, и обновления дублируются.
+    """
+    from app.integrations.max.client import max_client
+
+    url = settings.MINIAPP_PUBLIC_URL.strip().rstrip("/") + "/webhook/max"
+    res = await max_client.list_subscriptions()
+    subs = res.get("subscriptions", []) if isinstance(res, dict) else []
+    current = [s.get("url") for s in subs if s.get("url")]
+
+    for other in current:
+        if other != url:
+            await max_client.unsubscribe(other)
+            log.warning("Снята лишняя подписка вебхука: %s", other)
+    if url not in current:
+        await max_client.subscribe(url, settings.MAX_WEBHOOK_SECRET or None)
+        log.warning("Бот переподписан на вебхук: %s", url)
+
+
 async def _loop(name: str, coro, interval: float) -> None:
     log.info("Фоновая задача «%s» запущена (интервал %ss)", name, interval)
     # разносим старты, чтобы не бить по БД одновременно
@@ -234,7 +258,7 @@ async def _loop(name: str, coro, interval: float) -> None:
 def start_background_tasks() -> list[asyncio.Task]:
     from app.modules.notify.service import outbox_worker
 
-    return [
+    tasks = [
         asyncio.create_task(outbox_worker(interval=3.0), name="outbox"),
         asyncio.create_task(_loop("event_reminders", event_reminders, 300), name="reminders"),
         asyncio.create_task(
@@ -243,3 +267,12 @@ def start_background_tasks() -> list[asyncio.Task]:
         asyncio.create_task(_loop("buddy", buddy_and_cleanup, 1800), name="buddy"),
         asyncio.create_task(_loop("class_reminders", class_reminders, 240), name="classes"),
     ]
+    if (
+        settings.bot_enabled
+        and settings.BOT_WEBHOOK_AUTOSUBSCRIBE
+        and settings.MINIAPP_PUBLIC_URL.startswith("https://")
+    ):
+        tasks.append(
+            asyncio.create_task(_loop("webhook_watchdog", ensure_webhook, 1800), name="webhook")
+        )
+    return tasks

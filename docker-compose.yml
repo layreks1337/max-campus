@@ -13,7 +13,8 @@ services:
     ports:
       # 5432 на хосте может быть занят локально установленным PostgreSQL —
       # тогда подключение снаружи уходит не в контейнер. Держим отдельный порт.
-      - "5433:5432"
+      # Только localhost: на VPS база с паролем campus не должна торчать наружу.
+      - "127.0.0.1:5433:5432"
     volumes:
       - campus_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -38,7 +39,8 @@ services:
       DATA_DIR: /data
       MAX_CA_BUNDLE: /app/certs/russian_trusted_bundle.pem
     ports:
-      - "8000:8000"
+      # Наружу приложение отдаёт туннель или Caddy, напрямую — только localhost.
+      - "127.0.0.1:8000:8000"
     volumes:
       - campus_data:/data
     restart: unless-stopped
@@ -75,6 +77,43 @@ services:
     command: http app:8000 --url=https://${NGROK_DOMAIN}
     restart: unless-stopped
 
+  # Постоянный адрес через tuna.am — российский аналог ngrok. ngrok с российских
+  # IP больше не пускает (ERR_NGROK_9040). Зарезервированный поддомен есть только
+  # на платном тарифе; бесплатный туннель живёт 30 минут.
+  # В .env нужны TUNA_TOKEN и TUNA_SUBDOMAIN.
+  # Запуск:  docker compose --profile tuna up -d
+  tuna:
+    image: yuccastream/tuna:0.35.1
+    container_name: campus-tuna
+    profiles: ["tuna"]
+    depends_on:
+      - app
+    environment:
+      TUNA_TOKEN: ${TUNA_TOKEN}
+    # Инспектор выключен: он сохраняет запросы целиком, включая данные авторизации MAX.
+    command: http app:8000 --subdomain=${TUNA_SUBDOMAIN} --location=ru --https-redirect --inspect=false
+    restart: unless-stopped
+
+  # Для VPS: HTTPS-вход с автоматическим сертификатом Let's Encrypt.
+  # PUBLIC_HOST в .env — домен сервера, например 1-2-3-4.sslip.io (без покупки домена).
+  # Запуск:  docker compose --profile vps up -d
+  caddy:
+    image: caddy:2-alpine
+    container_name: campus-caddy
+    profiles: ["vps"]
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${PUBLIC_HOST} --to app:8000
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
 volumes:
   campus_pgdata:
   campus_data:
+  caddy_data:
+  caddy_config:

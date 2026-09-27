@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     MAX_BOT_TOKEN: str = ""
     MAX_API_BASE: str = "https://platform-api2.max.ru"
     MAX_WEBHOOK_SECRET: str = "change-me"
+    # Сторож вебхука: при старте и каждые 30 минут сверять подписку бота с
+    # MINIAPP_PUBLIC_URL и снимать чужие. Включать только на основном сервере —
+    # иначе локальный запуск уведёт бота с него.
+    BOT_WEBHOOK_AUTOSUBSCRIBE: bool = False
     # Бандл корневых сертификатов Минцифры — без него TLS до platform-api2 не поднимается
     MAX_CA_BUNDLE: str = str(REPO_ROOT / "certs" / "russian_trusted_bundle.pem")
     # Лимит платформы — 30 rps. Держим запас.

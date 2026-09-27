@@ -185,8 +185,10 @@ if FRONTEND_DIST.exists():
                 status_code=404,
                 content={"error": {"code": "NOT_FOUND", "message": "Метод не найден"}},
             )
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.is_file():
+        # resolve + проверка родителя: иначе `..%2F..%2Fetc%2Fpasswd` выходит из папки сборки
+        dist = FRONTEND_DIST.resolve()
+        candidate = (dist / full_path).resolve()
+        if full_path and candidate.is_relative_to(dist) and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(FRONTEND_DIST / "index.html")
 
