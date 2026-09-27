@@ -1,7 +1,7 @@
 /** HTTP-клиент. Заголовок авторизации подставляется в одном месте —
  *  размазывать его по экранам нельзя, иначе где-нибудь забудут. */
 
-import { getAuthToken } from "@/shared/max";
+import { getAuthHeader } from "@/shared/max";
 import type {
   AskResult,
   BuildingInfo,
@@ -55,7 +55,8 @@ export class ApiException extends Error {
 
 /* ── Протухшая сессия ───────────────────────────────────────────
    401 значит одно: сервер больше не принимает подпись запуска (MAX выдаёт её
-   один раз при открытии, срок — час). Каждый экран это не обработает, поэтому
+   один раз при открытии, срок — час) или ссылку из бота (срок — сутки).
+   Каждый экран это не обработает, поэтому
    сигнал общий: App подписывается и показывает полноэкранную заглушку
    «Сессия устарела» вместо сырой ошибки посреди сценария. */
 
@@ -85,7 +86,7 @@ async function request<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = {
-    Authorization: `MaxInitData ${getAuthToken()}`,
+    Authorization: getAuthHeader(),
     // Бесплатный ngrok иначе может отдать вместо JSON страницу-предупреждение.
     "ngrok-skip-browser-warning": "1",
   };
@@ -214,7 +215,7 @@ export const api = {
     const resp = await fetch("/api/assistant/transcribe", {
       method: "POST",
       headers: {
-        Authorization: `MaxInitData ${getAuthToken()}`,
+        Authorization: getAuthHeader(),
         "Content-Type": "application/octet-stream",
         "ngrok-skip-browser-warning": "1",
       },

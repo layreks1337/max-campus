@@ -26,6 +26,8 @@ log = logging.getLogger("notify")
 MAX_ATTEMPTS = 6
 QUIET_START_HOUR = 22
 QUIET_END_HOUR = 8
+# Сообщения, которые пользователь пересылает другим: кнопка без входа по ссылке
+FORWARDED_KINDS = frozenset({"share_event"})
 
 
 async def enqueue(
@@ -100,8 +102,12 @@ async def _deliver(item: Outbox) -> None:
         await max_client.send_document(item.max_user_id, path, item.text)
         return
 
-    # Кнопка сама понижается до ссылки и до текста — см. send_with_app_button
-    await send_with_app_button(item.max_user_id, item.text, label)
+    # Кнопка сама понижается до ссылки и до текста — см. send_with_app_button.
+    # Карточку события пересылают в чат группы: ссылка со входом отправителя
+    # пустила бы в его аккаунт всех, кто её откроет (решение 057)
+    await send_with_app_button(
+        item.max_user_id, item.text, label, signed=item.kind not in FORWARDED_KINDS
+    )
 
 
 async def process_batch(limit: int = 20) -> int:

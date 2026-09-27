@@ -7,6 +7,9 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#0E0E0F" />
+    <!-- Ссылка из бота несёт токен входа (?lt=…). Старые вебвью по умолчанию
+         отдают полный адрес чужим сайтам в Referer — оставляем им только домен. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>Кампус</title>
     <!-- Bridge мессенджера MAX. Вне MAX объект window.WebApp не появится —
          приложение это переживает и уходит в режим разработки (см. src/shared/max.ts). -->

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -39,6 +40,24 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("app")
+
+
+class _HideLinkToken(logging.Filter):
+    """Журнал доступа uvicorn пишет путь вместе с параметрами, а `?lt=` из
+    ссылки бота — это вход в аккаунт на сутки (решение 057). Значение вырезаем."""
+
+    _re = re.compile(r"([?&]lt=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                self._re.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
+            )
+        return True
+
+
+# uvicorn настраивает свои логгеры до импорта приложения — фильтр доживёт до запросов
+logging.getLogger("uvicorn.access").addFilter(_HideLinkToken())
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 

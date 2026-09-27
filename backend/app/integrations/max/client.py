@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.core.security import InitDataError, make_link_token
 
 log = logging.getLogger("max.client")
 
@@ -242,13 +243,32 @@ def _is_webapp_error(exc: MaxApiError) -> bool:
     return "webApp" in exc.body or "web_app" in exc.body
 
 
-async def send_with_app_button(user_id: int, text: str, label: str | None = None) -> None:
+def app_url_for(user_id: int, public_url: str, signed: bool = True) -> str:
+    """Адрес приложения для кнопки-ссылки, со входом этого пользователя (решение 057).
+
+    Ссылка открывается в браузере, где подписи MAX нет. Без токена `?lt=`
+    человек вошёл бы тестовым пользователем, и справка не пришла бы ему в чат.
+    Токен даёт вход в аккаунт на сутки, поэтому в сообщения, которые пересылают
+    другим (карточка события), его не кладём: `signed=False`.
+    """
+    if not signed:
+        return public_url
+    try:
+        return f"{public_url}/?lt={make_link_token(user_id)}"
+    except InitDataError:
+        return public_url
+
+
+async def send_with_app_button(
+    user_id: int, text: str, label: str | None = None, signed: bool = True
+) -> None:
     """Отправить сообщение с кнопкой входа в приложение, деградируя по обстоятельствам.
 
     Порядок попыток: open_app → обычная ссылка → просто текст.
     Сообщение должно дойти в любом случае — это важнее кнопки. К ссылке
     переходим при любом отказе 4xx на open_app; глобально open_app выключается
-    только ошибкой про webApp (приложение не привязано к боту).
+    только ошибкой про webApp (приложение не привязано к боту). Ссылка — с
+    подписанным входом получателя, если не `signed=False` (см. app_url_for).
     """
     global _open_app_supported
 
@@ -282,12 +302,12 @@ async def send_with_app_button(user_id: int, text: str, label: str | None = None
 
     public_url = settings.MINIAPP_PUBLIC_URL.strip().rstrip("/")
     if public_url.startswith("https://"):
+        url = app_url_for(user_id, public_url, signed)
         try:
-            await max_client.send_message(
-                user_id, text, [keyboard([[btn_link(label, public_url)]])]
-            )
+            await max_client.send_message(user_id, text, [keyboard([[btn_link(label, url)]])])
             return
         except MaxApiError as exc:
+            # Только код: в теле ответа MAX может повторить адрес кнопки с токеном
             log.warning("Кнопка-ссылка тоже не прошла (%s), отправляем текстом", exc.status)
 
     await max_client.send_message(user_id, text)

@@ -4,7 +4,12 @@ import { MemoryRouter } from "react-router-dom";
 import App from "@/App";
 import { ToastProvider } from "@/components/ui/toast";
 import "@/index.css";
+import { captureLinkToken } from "@/shared/max";
 import { installScrollMotion } from "@/shared/scroll-motion";
+
+/* Ссылка из бота (?lt=…): до первого запроса к API забрать токен входа
+   и заменить адрес в строке и в истории браузера на чистый. */
+captureLinkToken();
 
 /* MemoryRouter, а не BrowserRouter: Bridge мессенджера передаёт данные запуска
    во фрагменте URL (после #), и навигация по адресной строке с ним конфликтует.

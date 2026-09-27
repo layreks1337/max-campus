@@ -7,7 +7,8 @@
  *
  * Заглушка отдаёт dev-токен вида `dev:<id>:<Name>`, который бэкенд принимает
  * при ALLOW_DEV_AUTH=true. Имя — латиницей: токен уезжает в HTTP-заголовок,
- * а заголовки не допускают кириллицу.
+ * а заголовки не допускают кириллицу. Если приложение открыли ссылкой из бота,
+ * вместо заглушки — подписанный токен настоящего пользователя (см. ниже).
  */
 
 export interface MaxUser {
@@ -113,14 +114,74 @@ export function setDevUser(id: number, name: string): void {
   localStorage.setItem(DEV_USER_KEY, JSON.stringify({ id, name }));
 }
 
-/** Значение для заголовка Authorization. */
-export function getAuthToken(): string {
+/* ── Вход по ссылке из бота ─────────────────────────────────────
+   Пока организаторы не привязали мини-приложение к боту, кнопка в чате —
+   обычная ссылка, и приложение открывается в браузере без подписи MAX. Бот
+   кладёт в неё ?lt=<id>.<срок>.<подпись>: по нему сервер узнаёт настоящего
+   пользователя MAX, и справка приходит ему в чат (решение 057).
+   Токен живёт в sessionStorage — только эта вкладка — и сразу убирается
+   из адресной строки: иначе он уйдёт вместе со скопированной ссылкой
+   и останется в записи истории вкладки. */
+
+const LINK_TOKEN_KEY = "campus.linkToken";
+/** Тот же формат проверяет сервер; мусор в заголовок не отправляем —
+ *  fetch на недопустимых символах падает целиком. */
+const LINK_TOKEN_RE = /^[1-9]\d{0,18}\.[1-9]\d{0,11}\.[0-9a-f]{64}$/;
+
+let memoryLinkToken: string | null = null;
+
+/** Забрать токен из адреса. Вызывается один раз до первого запроса (main.tsx). */
+export function captureLinkToken(): void {
+  let url: URL;
+  try {
+    url = new URL(window.location.href);
+  } catch {
+    return;
+  }
+  const token = url.searchParams.get("lt");
+  if (token === null) return;
+
+  url.searchParams.delete("lt");
+  try {
+    // Фрагмент (#…) сохраняем: в нём Bridge передаёт данные запуска
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  } catch {
+    /* без History API токен останется в адресе — вход всё равно работает */
+  }
+
+  // Внутри MAX есть настоящая подпись запуска, она главнее ссылки
+  if (isInsideMax() || !LINK_TOKEN_RE.test(token)) return;
+  memoryLinkToken = token;
+  try {
+    sessionStorage.setItem(LINK_TOKEN_KEY, token);
+  } catch {
+    /* приватный режим: токен проживёт до перезагрузки вкладки */
+  }
+}
+
+function getLinkToken(): string | null {
+  if (memoryLinkToken) return memoryLinkToken;
+  try {
+    const saved = sessionStorage.getItem(LINK_TOKEN_KEY);
+    return saved && LINK_TOKEN_RE.test(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Открыто в браузере по ссылке из бота: пользователь настоящий, но вне MAX. */
+export const isLinkSession = (): boolean => !isInsideMax() && getLinkToken() !== null;
+
+/** Значение заголовка Authorization: подпись запуска MAX, ссылка бота или dev-вход. */
+export function getAuthHeader(): string {
   const real = window.WebApp?.initData;
-  if (real) return real;
+  if (real) return `MaxInitData ${real}`;
+  const link = getLinkToken();
+  if (link) return `MaxLink ${link}`;
   const dev = getDevUser();
   // Только ASCII: HTTP-заголовки не переносят кириллицу
   const safeName = dev.name.replace(/[^\x20-\x7E]/g, "") || "Dev";
-  return `dev:${dev.id}:${safeName}`;
+  return `MaxInitData dev:${dev.id}:${safeName}`;
 }
 
 /** Сообщить мессенджеру, что интерфейс отрисован (убирает скелетон). */

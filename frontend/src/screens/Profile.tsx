@@ -14,6 +14,7 @@ import { api, ApiException } from "@/shared/api";
 import {
   getDevUser,
   isInsideMax,
+  isLinkSession,
   isTestUserId,
   setDevUser,
   TEST_USER_ID_MAX,
@@ -143,7 +144,9 @@ export default function Profile({
           </>
         )}
 
-        {!isInsideMax() && (
+        {/* По ссылке из бота вход уже подписан настоящим id — тестовый
+            пользователь здесь не применился бы */}
+        {!isInsideMax() && !isLinkSession() && (
           <>
             <Divider className="my-4" />
             <button

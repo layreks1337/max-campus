@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.core.security import InitData, InitDataError, parse_dev_auth, validate_init_data
+from app.core.security import (
+    InitData,
+    InitDataError,
+    parse_dev_auth,
+    validate_init_data,
+    validate_link_token,
+)
 from app.db.models import STAFF_ROLES, AppUser, Binding, Staff, Student, utcnow
 from app.db.session import get_session
 
@@ -20,8 +26,16 @@ from app.db.session import get_session
 _init_cache: dict[str, tuple[float, InitData]] = {}
 _CACHE_TTL = 300.0
 
+# Внутренняя метка токена из ссылки бота (заголовок `Authorization: MaxLink <токен>`)
+_LINK_PREFIX = "link:"
+
 
 def _cached_validate(raw: str) -> InitData:
+    # Ссылка бота проверяется без кеша: HMAC дешёвый, а кеш на 5 минут
+    # продлил бы жизнь уже истёкшему токену
+    if raw.startswith(_LINK_PREFIX):
+        return validate_link_token(raw[len(_LINK_PREFIX) :])
+
     now = time.monotonic()
     hit = _init_cache.get(raw)
     if hit and now - hit[0] < _CACHE_TTL:
@@ -44,6 +58,8 @@ def _extract_raw(authorization: str | None, x_init_data: str | None) -> str:
     if authorization:
         if authorization.startswith("MaxInitData "):
             return authorization[len("MaxInitData ") :]
+        if authorization.startswith("MaxLink "):
+            return _LINK_PREFIX + authorization[len("MaxLink ") :]
         return authorization
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,6 +107,13 @@ async def get_app_user(
         user.last_seen_at = utcnow()
         if init.user.first_name and not user.first_name:
             user.first_name = init.user.first_name
+
+    if not init.user.first_name and not init.user.last_name:
+        # Вход по ссылке бота: в токене только id. Имя — из профиля, который бот
+        # записал по апдейту MAX, иначе демо-копия получила бы имя шаблона.
+        # Объект не кешируется (_cached_validate), дописывать в него безопасно.
+        init.user.first_name = user.first_name or ""
+        init.user.last_name = user.last_name or ""
 
     return user
 

@@ -13,7 +13,14 @@ import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ExpandingTabs, type TabItem } from "@/components/ui/expanding-tabs";
 import { CardSkeleton } from "@/components/ui/primitives";
 import { api, ApiException, isSessionExpired, onSessionExpired } from "@/shared/api";
-import { closeApp, getStartParam, isInsideMax, ready, setBackButton } from "@/shared/max";
+import {
+  closeApp,
+  getStartParam,
+  isInsideMax,
+  isLinkSession,
+  ready,
+  setBackButton,
+} from "@/shared/max";
 import type { Me } from "@/shared/types";
 
 import Campus from "@/screens/Campus";
@@ -163,7 +170,7 @@ export default function App() {
         onChange={(key) => navigate(key)}
       />
 
-      {!isInsideMax() && <DevBadge />}
+      {!isInsideMax() && (isLinkSession() ? <LinkBadge /> : <DevBadge />)}
     </div>
   );
 }
@@ -192,6 +199,19 @@ function Centered({ children }: { children: React.ReactNode }) {
  *  ту же, протухшую. Поэтому там главная кнопка — закрыть. */
 function SessionExpired() {
   const inside = isInsideMax();
+  // Ссылка из бота действует сутки, и перезагрузка отдаст тот же токен —
+  // помогает только новая ссылка из чата
+  if (!inside && isLinkSession()) {
+    return (
+      <Centered>
+        <p className="mb-2 text-[20px] font-[650]">Ссылка устарела</p>
+        <p className="max-w-[300px] text-[15px] leading-relaxed text-muted">
+          Ссылка для входа из чата действует сутки. Напишите боту в MAX /start —
+          он пришлёт новую.
+        </p>
+      </Centered>
+    );
+  }
   return (
     <Centered>
       <p className="mb-2 text-[20px] font-[650]">Сессия устарела</p>
@@ -228,6 +248,16 @@ function DevBadge() {
   return (
     <div className="pointer-events-none fixed top-2 left-2 z-[90] rounded-full bg-warn/15 px-2.5 py-1 text-[10px] font-semibold text-warn">
       DEV · вне MAX
+    </div>
+  );
+}
+
+/** Открыто в браузере по ссылке из бота: пользователь настоящий, подписан
+ *  сервером, но это не мини-приложение внутри MAX — так и пишем. */
+function LinkBadge() {
+  return (
+    <div className="pointer-events-none fixed top-2 left-2 z-[90] rounded-full bg-ok/15 px-2.5 py-1 text-[10px] font-semibold text-ok">
+      Браузер · вход через бота
     </div>
   );
 }

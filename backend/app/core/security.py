@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -137,6 +138,63 @@ def _build(pairs: dict[str, str], auth_date: int) -> InitData:
         auth_date=auth_date,
         start_param=pairs.get("start_param", "") or "",
         raw=pairs,
+    )
+
+
+# ── Подписанная ссылка входа от бота (решение 057) ─────────────────
+#
+# Токен `<max_user_id>.<exp>.<sig>`: exp — unix-время конца действия,
+# sig = hex(HMAC_SHA256(key=секрет ссылок, msg="<max_user_id>.<exp>")).
+# Бот выдаёт его только собеседнику в личке, поэтому id в токене — настоящий
+# пользователь MAX, как и в подписи запуска. Сам токен нигде не логируется.
+
+_LINK_TOKEN_RE = re.compile(r"([1-9][0-9]{0,18})\.([1-9][0-9]{0,11})\.([0-9a-f]{64})")
+
+
+def _link_secret() -> bytes:
+    if settings.LINK_SECRET:
+        return settings.LINK_SECRET.encode()
+    if settings.MAX_BOT_TOKEN:
+        # Отдельная метка, а не ключ WebAppData: секрет ссылок не совпадает
+        # с секретом подписи запуска, хотя выведен из того же токена бота
+        return hmac.new(b"CampusLinkToken", settings.MAX_BOT_TOKEN.encode(), hashlib.sha256).digest()
+    raise InitDataError("вход по ссылке недоступен: не задан LINK_SECRET или MAX_BOT_TOKEN")
+
+
+def _link_signature(user_part: str, exp_part: str) -> str:
+    msg = f"{user_part}.{exp_part}".encode()
+    return hmac.new(_link_secret(), msg, hashlib.sha256).hexdigest()
+
+
+def make_link_token(max_user_id: int, ttl_seconds: int | None = None) -> str:
+    """Токен входа по ссылке для кнопки бота. Кидает InitDataError без секрета."""
+    ttl = ttl_seconds if ttl_seconds is not None else settings.LINK_TTL_SECONDS
+    user_part, exp_part = str(int(max_user_id)), str(int(time.time()) + ttl)
+    return f"{user_part}.{exp_part}.{_link_signature(user_part, exp_part)}"
+
+
+def validate_link_token(token: str) -> InitData:
+    """Проверить токен из ссылки бота: формат, подпись (constant-time), срок."""
+    # Формат — до HMAC: compare_digest не сравнивает строки с не-ASCII,
+    # а заголовок приходит в latin-1 и может содержать что угодно
+    m = _LINK_TOKEN_RE.fullmatch(token.strip())
+    if not m:
+        raise InitDataError("ссылка входа повреждена")
+    user_part, exp_part, sig = m.groups()
+
+    if not hmac.compare_digest(_link_signature(user_part, exp_part), sig):
+        raise InitDataError("подпись ссылки входа не сошлась")
+
+    exp = int(exp_part)
+    if exp <= time.time():
+        raise InitDataError("ссылка входа устарела — отправьте боту /start за новой")
+
+    # Имени в токене нет: его подставит get_app_user из профиля, который бот
+    # записал по апдейту MAX
+    return InitData(
+        user=MaxUser(id=int(user_part)),
+        auth_date=exp - settings.LINK_TTL_SECONDS,
+        raw={"via": "link"},
     )
 
 

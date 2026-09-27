@@ -6,19 +6,26 @@
 и выдаёт -> студенту уходит PDF -> документ проверяется по QR.
 Плюс ассистент, календарь, возможности, матчинг, базовые проверки безопасности
 и демо-вход экспертов: своя копия студента, роль деканата в один тап, своя очередь.
+В конце — вход по подписанной ссылке из бота (?lt=…): секрет берётся из LINK_SECRET
+или выводится из MAX_BOT_TOKEN — из окружения или из .env в корне репозитория.
 
 Запуск:  python scripts/smoke_test.py [http://127.0.0.1:8000]
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import http.client
 import json
+import os
 import secrets
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000").rstrip("/")
 
@@ -42,11 +49,12 @@ def call(
     auth: str,
     body: dict | None = None,
     expect: tuple[int, ...] = (200, 201),
+    scheme: str = "MaxInitData",
 ) -> tuple[int, object]:
     url = f"{BASE}{path}"
     data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", f"MaxInitData {auth}")
+    req.add_header("Authorization", f"{scheme} {auth}")
     if data:
         req.add_header("Content-Type", "application/json; charset=utf-8")
     try:
@@ -452,6 +460,67 @@ elif demo_no:
     status, dissued = call("POST", f"/api/staff/requests/{demo_no}/issue", DEMO_EXPERT)
     check("демо-деканат выдаёт свою справку",
           status == 200 and isinstance(dissued, dict) and bool(dissued.get("document")), str(dissued)[:200])
+
+section("15. Вход по подписанной ссылке из бота")
+
+
+def env_value(key: str) -> str:
+    """Переменная из окружения, иначе из .env в корне репозитория."""
+    if os.environ.get(key):
+        return os.environ[key]
+    env_file = Path(__file__).resolve().parents[1] / ".env"
+    try:
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            name, sep, value = line.partition("=")
+            if sep and name.strip() == key:
+                return value.strip().strip("\"'")
+    except OSError:
+        pass
+    return ""
+
+
+def link_token(user_id: int, exp: int, secret: bytes) -> str:
+    """Тот же формат, что выдаёт бот (security.make_link_token): <id>.<exp>.<hex HMAC>.
+    Своя реализация намеренно — сверяет сервер с описанным форматом."""
+    sig = hmac.new(secret, f"{user_id}.{exp}".encode(), hashlib.sha256).hexdigest()
+    return f"{user_id}.{exp}.{sig}"
+
+
+link_secret = env_value("LINK_SECRET").encode()
+if not link_secret and env_value("MAX_BOT_TOKEN"):
+    link_secret = hmac.new(b"CampusLinkToken", env_value("MAX_BOT_TOKEN").encode(), hashlib.sha256).digest()
+
+if not link_secret:
+    notes.append("Вход по ссылке не проверен — нет LINK_SECRET/MAX_BOT_TOKEN ни в окружении, ни в .env")
+else:
+    LINK_USER = 900070  # тестовый id: уведомления ему не уходят
+    valid = link_token(LINK_USER, int(time.time()) + 3600, link_secret)
+    status, lme = call("GET", "/api/me", valid, scheme="MaxLink")
+    check("подписанная ссылка пускает, id — из токена",
+          status == 200 and isinstance(lme, dict) and lme.get("max_user_id") == LINK_USER,
+          f"{status} {str(lme)[:160]} — совпадает ли секрет с сервером?")
+
+    # Настоящий (не тестовый) id: dev-вход его не пускает, ссылка бота — да.
+    # Только чтение профиля, уведомлений этому id ничего не ставит в очередь.
+    status, rme = call("GET", "/api/me", link_token(12345, int(time.time()) + 3600, link_secret),
+                       scheme="MaxLink")
+    check("ссылка пускает и нетестовый id, закрытый для dev-входа",
+          status == 200 and isinstance(rme, dict) and rme.get("max_user_id") == 12345, f"получили {status}")
+
+    uid, exp, sig = valid.split(".")
+    forged_sig = f"{uid}.{exp}.{sig[:-1]}{'0' if sig[-1] != '0' else '1'}"
+    status, _ = call("GET", "/api/me", forged_sig, scheme="MaxLink")
+    check("ссылка с подделанной подписью отклоняется (401)", status == 401, f"получили {status}")
+
+    status, _ = call("GET", "/api/me", f"{LINK_USER + 1}.{exp}.{sig}", scheme="MaxLink")
+    check("ссылка с чужим id под той же подписью отклоняется (401)", status == 401, f"получили {status}")
+
+    expired = link_token(LINK_USER, int(time.time()) - 60, link_secret)
+    status, res = call("GET", "/api/me", expired, scheme="MaxLink")
+    check("просроченная ссылка отклоняется (401)", status == 401, f"получили {status}")
+
+    status, _ = call("GET", "/api/me", "not-a-token", scheme="MaxLink")
+    check("мусор вместо токена ссылки — 401, а не 500", status == 401, f"получили {status}")
 
 section("ИТОГ")
 print(f"  успешно: {passed}")
