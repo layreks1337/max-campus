@@ -6,18 +6,31 @@
  *  Код из деканата — второй путь, так входил бы настоящий студент. */
 
 
-import { CalendarDays, FileText, MessageCircle, Users } from "lucide-react";
+import { FileText, MessageCircle, Users } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { api, ApiException } from "@/shared/api";
 import type { Me } from "@/shared/types";
 
-const FEATURES = [
-  { icon: FileText, text: "Справки и заявления без визита в деканат" },
-  { icon: CalendarDays, text: "События вуза и запись в один тап" },
-  { icon: Users, text: "Знакомства и напарники по учёбе" },
-  { icon: MessageCircle, text: "Ассистент, который знает регламенты" },
+/** Три отличия, а не список экранов: расписание и деканат в приложении были
+ *  и у победителей прошлого года. Слоган привязан к треку — решение 062. */
+const POINTS = [
+  {
+    icon: FileText,
+    title: "Без очереди в деканат",
+    text: "Справка об обучении выдаётся сразу — PDF приходит в чат MAX",
+  },
+  {
+    icon: MessageCircle,
+    title: "Ответы по регламентам",
+    text: "Ассистент отвечает по документам вуза и показывает источник",
+  },
+  {
+    icon: Users,
+    title: "Свои люди с первого дня",
+    text: "Напарники и наставники — только подтверждённые студенты вуза",
+  },
 ];
 
 export default function Onboarding({
@@ -71,24 +84,24 @@ export default function Onboarding({
           с включённым «уменьшить движение» остаются невидимыми — и первый
           экран продукта оказывается пустым. Цена анимации слишком высока. */}
       <div className="mt-6">
-        <p className="mb-3 text-[13px] font-semibold tracking-wide text-accent uppercase">
-          Цифровой кампус
-        </p>
-        <h1 className="mb-4 text-[40px] leading-[1.02] font-[650]">
-          Вузовская рутина —<br />в одном приложении.
+        <p className="mb-3 text-[15px] font-semibold text-accent">Кампус — первокурснику</p>
+        <h1 className="mb-8 text-[40px] leading-[1.02] font-[650]">
+          Справка из деканата —<br />файлом в чат.
         </h1>
-        <p className="mb-9 text-[18px] leading-relaxed font-light text-muted">
-          Заявка уходит отсюда, а готовая справка возвращается файлом прямо в чат.
-        </p>
       </div>
 
-      <div className="mb-10 flex flex-col gap-3.5">
-        {FEATURES.map((f) => (
-          <div key={f.text} className="flex items-center gap-3.5">
+      <div className="mb-10 flex flex-col gap-4">
+        {POINTS.map((p) => (
+          <div key={p.title} className="flex items-start gap-3.5">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-raised text-ink">
-              <f.icon size={18} />
+              <p.icon size={18} />
             </span>
-            <span className="text-[15px] leading-snug text-ink">{f.text}</span>
+            <span className="min-w-0">
+              <span className="block text-[16px] leading-snug font-semibold text-ink">
+                {p.title}
+              </span>
+              <span className="block text-[14px] leading-snug text-muted">{p.text}</span>
+            </span>
           </div>
         ))}
       </div>

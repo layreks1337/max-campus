@@ -35,7 +35,12 @@ export default function People() {
   return (
     <div className="px-4 pb-28 safe-top">
       <header className="scroll-fade mb-4 px-1">
-        <h1>Люди</h1>
+        <h1 className="mb-1">Люди</h1>
+        {/* Безопасная среда — часть позиционирования: в колоде только студенты
+            с привязкой к вузу, а @username виден лишь после взаимного отклика */}
+        <p className="text-[14px] leading-snug text-muted">
+          Только подтверждённые студенты вуза · контакт открывается при взаимном отклике
+        </p>
       </header>
 
       <div className="mb-5 flex gap-2 px-1">

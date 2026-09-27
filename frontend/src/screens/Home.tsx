@@ -1,4 +1,5 @@
-/** Главная — афиша событий и конкурсов, активные заявки, рекомендации, вход в матчинг. */
+/** Главная — ближайшая пара, справка файлом в чат, афиша событий и конкурсов,
+ *  активные заявки, рекомендации, вход в матчинг. */
 
 import { ArrowRight, ChevronRight, Sparkles, Users } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
@@ -9,6 +10,7 @@ import { Afisha, ItemOverlay, type Item, opportunityItem } from "@/components/af
 import { DayTimeline, LinkRow, NowCard, PollCard, QuickActions } from "@/components/campus";
 import { OpportunityCard, RequestCard, shortFaculty } from "@/components/cards";
 import { Button } from "@/components/ui/button";
+import { GlassIcon } from "@/components/ui/glass-icon";
 import { Card, CardSkeleton, Chip, Empty, Section } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
@@ -92,6 +94,7 @@ export default function Home({ me }: { me: Me }) {
       </header>
 
       {today && <NowCard today={today} />}
+      <CertificateCard />
       <QuickActions />
 
       <Afisha />
@@ -142,23 +145,6 @@ export default function Home({ me }: { me: Me }) {
                   onClick={() => navigate(`/requests/${r.public_no}`)}
                 />
               ))}
-            </Section>
-          )}
-
-          {data && data.active_requests.length === 0 && (
-            <Section title="Заявки">
-              <Card>
-                <p className="mb-1 text-[16px] font-semibold text-ink">
-                  Нужна справка или заявление?
-                </p>
-                <p className="mb-4 text-[14px] leading-relaxed text-muted">
-                  Оформляется за пару минут. Готовый документ придёт файлом в чат —
-                  приходить в деканат не нужно.
-                </p>
-                <Button size="sm" onClick={() => navigate("/requests/new")}>
-                  Оформить <ArrowRight size={15} />
-                </Button>
-              </Card>
             </Section>
           )}
 
@@ -233,5 +219,38 @@ export default function Home({ me }: { me: Me }) {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+/** Главный сценарий продукта — сразу под ближайшей парой, а не в конце ленты:
+ *  раньше карточка «Нужна справка?» стояла ~1300 px ниже и только при пустом
+ *  списке заявок. Ведёт прямо в форму справки об обучении — она типовая
+ *  и выдаётся автоматически (решение 059). */
+function CertificateCard() {
+  const navigate = useNavigate();
+  return (
+    <Card className="mb-3">
+      <div className="mb-4 flex items-start gap-4">
+        <GlassIcon template="study_certificate" size={56} />
+        <div className="min-w-0 flex-1">
+          <p className="mb-1 text-[22px] leading-[1.15] font-[700] text-ink">
+            Справка — <span className="whitespace-nowrap">файлом в чат</span>
+          </p>
+          <p className="text-[14px] leading-snug text-muted">
+            Справка об обучении выдаётся сразу: PDF придёт в чат MAX, в деканат идти не нужно.
+          </p>
+        </div>
+      </div>
+      {/* Две кнопки в ряд на экране 360 px переносили подпись на вторую строку */}
+      <Button full onClick={() => navigate("/requests/new/study_certificate")}>
+        Справка об обучении <ArrowRight size={16} />
+      </Button>
+      <button
+        onClick={() => navigate("/requests/new")}
+        className="mt-3 w-full text-center text-[14px] text-muted"
+      >
+        Другие справки и заявления
+      </button>
+    </Card>
   );
 }

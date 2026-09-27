@@ -157,7 +157,7 @@ async def verify_page(doc_uuid: str, session: SessionDep) -> HTMLResponse:
 </style></head>
 <body><main class="card">
   <h1>Проверка подлинности</h1>
-  <p class="sub">MAX Campus · цифровой кампус</p>
+  <p class="sub">Кампус · справки вуза в мессенджере MAX</p>
   {badge}
   {body}
   <p class="note">
