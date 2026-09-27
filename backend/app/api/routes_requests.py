@@ -124,6 +124,7 @@ async def create_request(
         ),
         dedup_key=f"req:{req.id}:SUBMITTED",
         open_app_label="Открыть заявку",
+        open_app_payload=f"req_{req.public_no}",
     )
 
     res = await session.execute(_load_full(select(Request).where(Request.id == req.id)))
@@ -284,6 +285,7 @@ async def staff_transition(
             text=engine.status_notification_text(req),
             dedup_key=f"req:{req.id}:{req.status}",
             open_app_label="Открыть заявку",
+            open_app_payload=f"req_{req.public_no}",
         )
     return serializers.request_out(req, with_student=True)
 
@@ -359,6 +361,7 @@ async def staff_issue(
                 text=engine.status_notification_text(req),
                 dedup_key=f"req:{req.id}:ISSUED",
                 open_app_label="Открыть заявку",
+                open_app_payload=f"req_{req.public_no}",
             )
 
     # Документ создан в этой же сессии — связь на объекте req ещё помнит старое

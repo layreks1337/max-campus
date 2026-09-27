@@ -7,7 +7,7 @@ import {
   MessageCircle,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { ExpandingTabs, type TabItem } from "@/components/ui/expanding-tabs";
@@ -56,6 +56,7 @@ export default function App() {
   const [expired, setExpired] = useState(isSessionExpired);
   const navigate = useNavigate();
   const location = useLocation();
+  const startParamHandled = useRef(false);
 
   // Любой 401 из api.ts — подпись запуска больше не принимается
   useEffect(() => onSessionExpired(() => setExpired(true)), []);
@@ -80,12 +81,20 @@ export default function App() {
     void loadMe();
   }, [loadMe]);
 
-  // Диплинк из чата: ?start_param=request_study_certificate
+  // Диплинк из чата: startapp=request_study_certificate, payload кнопки
+  // open_app или WebAppStartParam запасной ссылки бота (см. getStartParam).
+  // Один раз за запуск: navigate меняется при каждом переходе, и эффект без
+  // флага возвращал бы на экран диплинка после любого нажатия, а с заявкой,
+  // которой нет, — гонял бы по кругу «заявка → 404 → список → заявка».
   useEffect(() => {
-    if (!me?.is_bound) return;
+    if (!me?.is_bound || startParamHandled.current) return;
+    startParamHandled.current = true;
     const param = getStartParam();
     if (param.startsWith("request_")) {
       navigate(`/requests/new/${param.slice("request_".length)}`);
+    } else if (param.startsWith("req_")) {
+      // Уведомление о заявке: «Открыть заявку» ведёт в неё саму, а не на главную
+      navigate(`/requests/${param.slice("req_".length)}`);
     } else if (param === "events") {
       navigate("/");
     } else if (param.startsWith("event_")) {

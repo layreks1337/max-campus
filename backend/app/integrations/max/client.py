@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import ssl
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -227,12 +229,22 @@ class MaxClient:
 max_client = MaxClient()
 
 
-# Кнопка open_app работает только после того, как организаторы привяжут
-# мини-приложение к боту. До этого MAX отвечает «Field 'webApp' cannot be null»
-# и сообщение не доходит вообще. Флаг выставляется по первой такой ошибке,
-# дальше вместо open_app отправляется обычная ссылка на то же приложение —
-# из чата оно открывается в браузере.
+# Кнопка open_app открывает мини-приложение, привязанное к боту. Раньше MAX
+# отвечал на неё «Field 'webApp' cannot be null», и сообщение не доходило вообще:
+# в кнопке не было обязательного по схеме поля web_app (решение 058). Если MAX
+# всё равно откажет с упоминанием webApp (например, приложение ещё не привязано
+# организаторами), флаг выключается по первой такой ошибке, и дальше вместо
+# open_app уходит обычная ссылка на то же приложение — оно откроется в браузере.
 _open_app_supported = True
+
+# Публичное имя бота для поля web_app кнопки open_app. Из настроек, а если там
+# пусто — один раз из GET /me.
+_bot_username: str | None = None
+
+# Стартовый параметр мини-приложения: по документации MAX — до 512 символов
+# из латиницы, цифр, «_» и «-». С другими символами MAX его выбрасывает или
+# отклоняет всё сообщение, поэтому такой параметр не отправляем вовсе.
+_START_PARAM_RE = re.compile(r"[A-Za-z0-9_-]{1,512}")
 
 
 def open_app_supported() -> bool:
@@ -243,24 +255,70 @@ def _is_webapp_error(exc: MaxApiError) -> bool:
     return "webApp" in exc.body or "web_app" in exc.body
 
 
-def app_url_for(user_id: int, public_url: str, signed: bool = True) -> str:
+def clean_start_param(payload: str | None) -> str | None:
+    """Параметр запуска, если MAX его примет; иначе None — откроется главная."""
+    if not payload:
+        return None
+    if not _START_PARAM_RE.fullmatch(payload):
+        log.warning("Параметр запуска %r не подходит под формат MAX — отправляем без него", payload[:60])
+        return None
+    return payload
+
+
+async def bot_username() -> str:
+    """Имя бота, к которому привязано мини-приложение (поле web_app кнопки open_app).
+
+    Пустая строка — узнать не удалось; тогда кнопку open_app не шлём, сразу ссылку.
+    Неудачу не запоминаем: следующее сообщение спросит /me ещё раз.
+    """
+    global _bot_username
+    if _bot_username is None:
+        name = settings.MAX_BOT_USERNAME.strip().lstrip("@")
+        if not name:
+            try:
+                me = await max_client.get_me()
+            except (MaxApiError, httpx.HTTPError) as exc:
+                log.warning("Не удалось узнать имя бота через /me: %s", exc)
+                return ""
+            name = str((me or {}).get("username") or "") if isinstance(me, dict) else ""
+            if not name:
+                return ""
+        _bot_username = name
+    return _bot_username
+
+
+def app_url_for(
+    user_id: int, public_url: str, signed: bool = True, start_param: str | None = None
+) -> str:
     """Адрес приложения для кнопки-ссылки, со входом этого пользователя (решение 057).
 
     Ссылка открывается в браузере, где подписи MAX нет. Без токена `?lt=`
     человек вошёл бы тестовым пользователем, и справка не пришла бы ему в чат.
     Токен даёт вход в аккаунт на сутки, поэтому в сообщения, которые пересылают
     другим (карточка события), его не кладём: `signed=False`.
+
+    `start_param` уходит GET-параметром `WebAppStartParam` — так MAX передаёт
+    стартовый параметр в адресе мини-приложения, и фронт читает его там же, где
+    внутри MAX (решение 058). Ссылка «Открыть заявку» ведёт в саму заявку.
     """
-    if not signed:
-        return public_url
-    try:
-        return f"{public_url}/?lt={make_link_token(user_id)}"
-    except InitDataError:
-        return public_url
+    query: dict[str, str] = {}
+    if signed:
+        try:
+            query["lt"] = make_link_token(user_id)
+        except InitDataError:
+            pass
+    start_param = clean_start_param(start_param)
+    if start_param:
+        query["WebAppStartParam"] = start_param
+    return f"{public_url}/?{urlencode(query)}" if query else public_url
 
 
 async def send_with_app_button(
-    user_id: int, text: str, label: str | None = None, signed: bool = True
+    user_id: int,
+    text: str,
+    label: str | None = None,
+    signed: bool = True,
+    payload: str | None = None,
 ) -> None:
     """Отправить сообщение с кнопкой входа в приложение, деградируя по обстоятельствам.
 
@@ -269,6 +327,9 @@ async def send_with_app_button(
     переходим при любом отказе 4xx на open_app; глобально open_app выключается
     только ошибкой про webApp (приложение не привязано к боту). Ссылка — с
     подписанным входом получателя, если не `signed=False` (см. app_url_for).
+
+    `payload` — стартовый параметр (например `req_2026-000123`): и кнопка
+    open_app, и запасная ссылка открывают приложение сразу на нужном экране.
     """
     global _open_app_supported
 
@@ -276,16 +337,23 @@ async def send_with_app_button(
         await max_client.send_message(user_id, text)
         return
 
-    if _open_app_supported:
+    payload = clean_start_param(payload)
+
+    web_app = await bot_username() if _open_app_supported else ""
+    if web_app:
         try:
-            await max_client.send_message(user_id, text, [keyboard([[btn_open_app(label)]])])
+            await max_client.send_message(
+                user_id, text, [keyboard([[btn_open_app(label, web_app, payload)]])]
+            )
             return
         except MaxApiError as exc:
             if _is_webapp_error(exc):
                 _open_app_supported = False
                 log.warning(
-                    "Мини-приложение ещё не привязано к боту организаторами — "
-                    "кнопка open_app отключена, дальше отправляем ссылку"
+                    "MAX не принял кнопку open_app (%s: %s) — приложение, видимо, не "
+                    "привязано к боту организаторами; дальше отправляем ссылку",
+                    exc.status,
+                    exc.body[:200],
                 )
             elif 400 <= exc.status < 500:
                 # Любой другой отказ 4xx повтором не лечится: ретраи из очереди
@@ -302,7 +370,7 @@ async def send_with_app_button(
 
     public_url = settings.MINIAPP_PUBLIC_URL.strip().rstrip("/")
     if public_url.startswith("https://"):
-        url = app_url_for(user_id, public_url, signed)
+        url = app_url_for(user_id, public_url, signed, payload)
         try:
             await max_client.send_message(user_id, text, [keyboard([[btn_link(label, url)]])])
             return
@@ -321,8 +389,15 @@ def keyboard(rows: list[list[dict]]) -> dict:
     return {"type": "inline_keyboard", "payload": {"buttons": rows}}
 
 
-def btn_open_app(text: str) -> dict:
-    return {"type": "open_app", "text": text}
+def btn_open_app(text: str, web_app: str, payload: str | None = None) -> dict:
+    """Кнопка запуска мини-приложения. `web_app` — имя бота, к которому оно
+    привязано: по схеме MAX поле обязательное, без него весь запрос отклоняется
+    с «Field 'webApp' cannot be null». `payload` приходит в приложение как
+    `initDataUnsafe.start_param`."""
+    btn: dict[str, Any] = {"type": "open_app", "text": text, "web_app": web_app}
+    if payload:
+        btn["payload"] = payload
+    return btn
 
 
 def btn_link(text: str, url: str) -> dict:

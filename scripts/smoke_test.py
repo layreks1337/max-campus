@@ -253,6 +253,12 @@ if isinstance(events, list) and events:
             print(f"       статус записи: {reg['my_status']}, занято {reg['taken']}/{reg['capacity']}")
         status, reg2 = call("POST", f"/api/events/{target['id']}/register", STUDENT)
         check("повторная запись не дублируется", status == 200 and reg2["my_status"] == reg["my_status"])
+    # Тестовому id бот ничего не шлёт — проверяется только ссылка
+    status, share = call("POST", f"/api/events/{events[0]['id']}/share", STUDENT)
+    check("«Поделиться»: диплинк max.ru/<бот>?startapp=event_<id>",
+          status == 200 and isinstance(share, dict)
+          and f"?startapp=event_{events[0]['id']}" in share.get("link", ""),
+          str(share)[:200])
 
 section("10. Возможности и рекомендации")
 status, opps = call("GET", "/api/opportunities", STUDENT)

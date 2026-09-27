@@ -193,7 +193,7 @@ async def class_reminders() -> int:
                 created = await enqueue(
                     session, max_user_id=max_id, kind="CLASS_REMINDER", text=text,
                     dedup_key=f"class:{student_id}:{today.isoformat()}",
-                    open_app_label="Расписание",
+                    open_app_label="Расписание", open_app_payload="schedule",
                 )
                 if created:
                     sent += 1

@@ -38,6 +38,7 @@ async def enqueue(
     text: str,
     dedup_key: str,
     open_app_label: str | None = None,
+    open_app_payload: str | None = None,
     file_path: str | None = None,
     respect_quiet_hours: bool = False,
 ) -> Outbox | None:
@@ -47,6 +48,9 @@ async def enqueue(
     отрицательный max_user_id, тестовые аккаунты режима разработки лежат
     в диапазоне TEST_USER_ID_MIN..TEST_USER_ID_MAX (core/config.py). Иначе бот
     стучится в несуществующие аккаунты и засоряет очередь бесконечными ретраями.
+
+    `open_app_payload` — стартовый параметр кнопки (`req_<номер>`, `event_<id>`):
+    приложение откроется сразу на этом экране, см. App.tsx.
     """
     if not max_user_id or max_user_id <= 0:
         return None
@@ -57,6 +61,8 @@ async def enqueue(
     payload: dict = {}
     if open_app_label:
         payload["open_app_label"] = open_app_label
+        if open_app_payload:
+            payload["open_app_payload"] = open_app_payload
     if file_path:
         payload["file_path"] = file_path
 
@@ -93,6 +99,7 @@ async def enqueue(
 
 async def _deliver(item: Outbox) -> None:
     label = item.payload_json.get("open_app_label")
+    start_param = item.payload_json.get("open_app_payload")
     file_path = item.payload_json.get("file_path")
 
     if file_path:
@@ -106,7 +113,11 @@ async def _deliver(item: Outbox) -> None:
     # Карточку события пересылают в чат группы: ссылка со входом отправителя
     # пустила бы в его аккаунт всех, кто её откроет (решение 057)
     await send_with_app_button(
-        item.max_user_id, item.text, label, signed=item.kind not in FORWARDED_KINDS
+        item.max_user_id,
+        item.text,
+        label,
+        signed=item.kind not in FORWARDED_KINDS,
+        payload=start_param,
     )
 
 

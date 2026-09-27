@@ -38,6 +38,9 @@ class Settings(BaseSettings):
 
     # ── MAX ───────────────────────────────────────────────────────
     MAX_BOT_TOKEN: str = ""
+    # Публичное имя бота (без @): поле web_app кнопки open_app и диплинки
+    # max.ru/<имя>?startapp=…. Пусто — узнаётся один раз через GET /me.
+    MAX_BOT_USERNAME: str = "t355_hakaton_max_bot"
     MAX_API_BASE: str = "https://platform-api2.max.ru"
     MAX_WEBHOOK_SECRET: str = "change-me"
     # Отклонять вебхук без заголовка X-Max-Bot-Api-Secret. Пока не подтверждено

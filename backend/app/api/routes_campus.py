@@ -37,6 +37,7 @@ from app.db.models import (
     Student,
     utcnow,
 )
+from app.integrations.max.client import app_url_for, bot_username
 from app.modules.demo.service import demo_filter, demo_student_ids, is_demo
 from app.modules.notify.service import enqueue
 
@@ -45,7 +46,6 @@ router = APIRouter(tags=["campus"])
 public_router = APIRouter(tags=["public"])
 
 WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-BOT_USERNAME = "t355_hakaton_max_bot"
 
 
 def _not_found(message: str) -> HTTPException:
@@ -512,9 +512,15 @@ class ShareOut(BaseModel):
     link: str
 
 
-def app_link(param: str) -> str:
+async def app_link(param: str) -> str:
     """Ссылка, открывающая мини-приложение сразу на нужном экране."""
-    return f"https://max.ru/{BOT_USERNAME}?startapp={param}"
+    name = await bot_username()
+    if name:
+        return f"https://max.ru/{name}?startapp={param}"
+    # Имя бота не узнать (пусто в настройках и MAX недоступен) — ссылка на само
+    # приложение: браузер откроет тот же экран по WebAppStartParam
+    public_url = settings.MINIAPP_PUBLIC_URL.strip().rstrip("/")
+    return app_url_for(0, public_url, signed=False, start_param=param)
 
 
 @router.post("/events/{event_id}/share", response_model=ShareOut, summary="Поделиться событием")
@@ -525,7 +531,7 @@ async def share_event(event_id: int, current: BoundUserDep, session: SessionDep)
     ev = await session.get(CalendarEvent, event_id)
     if ev is None:
         raise _not_found("Событие не найдено")
-    link = app_link(f"event_{ev.id}")
+    link = await app_link(f"event_{ev.id}")
     text = f"📅 {ev.title}\n{when_full_ru(ev.starts_at)}"
     if ev.location:
         text += f" · {ev.location}"
@@ -537,6 +543,7 @@ async def share_event(event_id: int, current: BoundUserDep, session: SessionDep)
         text=text,
         dedup_key=f"share:{current.app_user.id}:{ev.id}:{utcnow().strftime('%Y%m%d%H%M')}",
         open_app_label="Открыть событие",
+        open_app_payload=f"event_{ev.id}",
     )
     await session.commit()
     return ShareOut(sent_to_chat=item is not None, text=text, link=link)
@@ -685,7 +692,7 @@ async def create_poll(body: PollIn, current: BoundUserDep, session: SessionDep) 
             session, max_user_id=max_user_id, kind="group_poll",
             text=f"🗳 Староста {st.short_name} спрашивает группу {st.group_name}:\n\n{poll.question}",
             dedup_key=f"poll:{poll.id}:{max_user_id}",
-            open_app_label="Ответить", respect_quiet_hours=True,
+            open_app_label="Ответить", open_app_payload="group", respect_quiet_hours=True,
         )
     await session.commit()
     return await _poll_out(session, poll, st.id)

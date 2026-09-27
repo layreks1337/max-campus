@@ -32,8 +32,9 @@ docker compose logs tunnel | grep trycloudflare   # адрес появится 
 
 ```bash
 curl http://localhost:8000/api/health
-python scripts/smoke_test.py               # сквозной сценарий, безопасность и демо-вход, 61 проверка
+python scripts/smoke_test.py               # сквозной сценарий, безопасность и демо-вход, 68 проверок
 python scripts/test_assistant.py           # качество ответов ассистента
+docker compose exec -T app python - < scripts/test_bot_buttons.py   # кнопки бота, без сети
 ```
 
 ### Подключение бота

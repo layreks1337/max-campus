@@ -228,8 +228,26 @@ export function openExternal(url: string): void {
   else window.open(url, "_blank", "noopener");
 }
 
+/** Формат стартового параметра по документации MAX: латиница, цифры, «_» и «-». */
+const START_PARAM_RE = /^[A-Za-z0-9_-]{1,512}$/;
+
+/** Стартовый параметр запуска: `req_<номер>`, `event_<id>`, `schedule`…
+ *
+ *  Внутри MAX он приходит в подписи запуска (`initDataUnsafe.start_param`) —
+ *  из диплинка max.ru/<бот>?startapp=… или из payload кнопки open_app. Тот же
+ *  параметр MAX кладёт в адрес приложения GET-параметром `WebAppStartParam`;
+ *  там же его передаёт запасная кнопка-ссылка бота, открывающая браузер
+ *  (решение 058). Параметр только выбирает экран: права проверяет сервер. */
 export function getStartParam(): string {
-  return window.WebApp?.initDataUnsafe?.start_param ?? "";
+  let param = window.WebApp?.initDataUnsafe?.start_param ?? "";
+  if (!param) {
+    try {
+      param = new URLSearchParams(window.location.search).get("WebAppStartParam") ?? "";
+    } catch {
+      param = "";
+    }
+  }
+  return START_PARAM_RE.test(param) ? param : "";
 }
 
 /** DIALOG — личка, CHAT — групповой чат. Влияет на сценарии старосты. */
