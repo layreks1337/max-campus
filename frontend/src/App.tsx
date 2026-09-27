@@ -12,8 +12,8 @@ import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { ExpandingTabs, type TabItem } from "@/components/ui/expanding-tabs";
 import { CardSkeleton } from "@/components/ui/primitives";
-import { api, ApiException } from "@/shared/api";
-import { getStartParam, isInsideMax, ready, setBackButton } from "@/shared/max";
+import { api, ApiException, isSessionExpired, onSessionExpired } from "@/shared/api";
+import { closeApp, getStartParam, isInsideMax, ready, setBackButton } from "@/shared/max";
 import type { Me } from "@/shared/types";
 
 import Campus from "@/screens/Campus";
@@ -46,8 +46,12 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState<string | null>(null);
+  const [expired, setExpired] = useState(isSessionExpired);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Любой 401 из api.ts — подпись запуска больше не принимается
+  useEffect(() => onSessionExpired(() => setExpired(true)), []);
 
   const loadMe = useCallback(async () => {
     try {
@@ -102,6 +106,8 @@ export default function App() {
     );
     return match?.key ?? "/";
   }, [location.pathname, tabs]);
+
+  if (expired) return <SessionExpired />;
 
   if (loading) return <BootSkeleton />;
 
@@ -176,6 +182,41 @@ function Centered({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh flex-col items-center justify-center px-6 text-center">
       {children}
     </div>
+  );
+}
+
+/** Сервер перестал принимать подпись запуска (401). Внутри MAX помогает только
+ *  новый запуск: подпись выдаётся при открытии, и перезагрузка страницы отдаст
+ *  ту же, протухшую. Поэтому там главная кнопка — закрыть. */
+function SessionExpired() {
+  const inside = isInsideMax();
+  return (
+    <Centered>
+      <p className="mb-2 text-[20px] font-[650]">Сессия устарела</p>
+      <p className="mb-6 max-w-[300px] text-[15px] leading-relaxed text-muted">
+        {inside
+          ? "Откройте приложение заново — подпись входа из MAX действует один час."
+          : "Откройте приложение заново из чата с ботом в MAX."}
+      </p>
+      {inside && (
+        <button
+          onClick={() => closeApp()}
+          className="mb-3 h-12 rounded-full bg-ink px-6 font-semibold text-canvas"
+        >
+          Закрыть приложение
+        </button>
+      )}
+      <button
+        onClick={() => window.location.reload()}
+        className={
+          inside
+            ? "h-12 rounded-full px-6 font-semibold text-muted"
+            : "h-12 rounded-full bg-ink px-6 font-semibold text-canvas"
+        }
+      >
+        Обновить
+      </button>
+    </Centered>
   );
 }
 

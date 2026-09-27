@@ -10,7 +10,14 @@ import { Card, Chip, Divider } from "@/components/ui/primitives";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
-import { getDevUser, isInsideMax, setDevUser } from "@/shared/max";
+import {
+  getDevUser,
+  isInsideMax,
+  isTestUserId,
+  setDevUser,
+  TEST_USER_ID_MAX,
+  TEST_USER_ID_MIN,
+} from "@/shared/max";
 import type { Me } from "@/shared/types";
 
 const THEME_KEY = "campus.theme";
@@ -237,20 +244,25 @@ function DevUserSheet({ open, onClose }: { open: boolean; onClose: () => void })
   const current = getDevUser();
   const [id, setId] = useState(String(current.id));
   const [name, setName] = useState(current.name);
+  const idOk = isTestUserId(Number(id));
 
   return (
     <Sheet open={open} onClose={onClose} title="Тестовый пользователь">
       <p className="mb-4 text-[15px] leading-relaxed text-muted">
         Приложение открыто вне мессенджера, поэтому подпись запуска не проверяется.
-        Здесь можно представиться другим пользователем — удобно, чтобы посмотреть
-        приложение глазами студента и сотрудника одновременно.
+        Здесь можно представиться другим тестовым пользователем — удобно, чтобы
+        посмотреть приложение глазами студента и сотрудника одновременно.
       </p>
       <p className="mb-2 text-[13px] font-semibold text-muted">ID</p>
       <input
         value={id}
         onChange={(e) => setId(e.target.value.replace(/\D/g, ""))}
-        className="mb-4 h-12 w-full rounded-[16px] bg-field px-4 font-mono text-[15px] text-ink outline-none"
+        className="mb-2 h-12 w-full rounded-[16px] bg-field px-4 font-mono text-[15px] text-ink outline-none"
       />
+      {/* Настоящие id MAX без подписи сервер не примет — не даём сохранить заведомо 401 */}
+      <p className={`mb-4 text-[13px] ${idOk ? "text-muted" : "text-warn"}`}>
+        Только тестовые id: {TEST_USER_ID_MIN}–{TEST_USER_ID_MAX}
+      </p>
       <p className="mb-2 text-[13px] font-semibold text-muted">Имя (латиницей)</p>
       <input
         value={name}
@@ -259,8 +271,9 @@ function DevUserSheet({ open, onClose }: { open: boolean; onClose: () => void })
       />
       <Button
         full
+        disabled={!idOk}
         onClick={() => {
-          setDevUser(Number(id) || 900001, name || "Dev");
+          setDevUser(Number(id), name || "Dev");
           window.location.reload();
         }}
       >

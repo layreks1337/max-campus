@@ -36,13 +36,15 @@ authentication:
     signed_payload: >-
       Пары key=value из WebAppData, кроме hash, отсортированные по ключу
       и склеенные через перевод строки.
-    ttl_seconds: 900
+    ttl_seconds: 3600
 
   development_mode:
     description: >-
       Для проверки вне мессенджера предусмотрен режим разработки:
       вместо подписи принимается строка вида dev:<user_id>:<Name>.
-      Включается переменной ALLOW_DEV_AUTH, в продуктивной среде выключается.
+      Только для тестовых user_id 900000–999999, остальные получают 401 —
+      представиться настоящим пользователем MAX без подписи нельзя.
+      Совсем выключается переменной ALLOW_DEV_AUTH=false.
     header_example: "Authorization: MaxInitData dev:900001:Anna"
 
 authorization:

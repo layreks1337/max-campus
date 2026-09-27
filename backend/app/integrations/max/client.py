@@ -246,7 +246,9 @@ async def send_with_app_button(user_id: int, text: str, label: str | None = None
     """Отправить сообщение с кнопкой входа в приложение, деградируя по обстоятельствам.
 
     Порядок попыток: open_app → обычная ссылка → просто текст.
-    Сообщение должно дойти в любом случае — это важнее кнопки.
+    Сообщение должно дойти в любом случае — это важнее кнопки. К ссылке
+    переходим при любом отказе 4xx на open_app; глобально open_app выключается
+    только ошибкой про webApp (приложение не привязано к боту).
     """
     global _open_app_supported
 
@@ -259,13 +261,24 @@ async def send_with_app_button(user_id: int, text: str, label: str | None = None
             await max_client.send_message(user_id, text, [keyboard([[btn_open_app(label)]])])
             return
         except MaxApiError as exc:
-            if not _is_webapp_error(exc):
+            if _is_webapp_error(exc):
+                _open_app_supported = False
+                log.warning(
+                    "Мини-приложение ещё не привязано к боту организаторами — "
+                    "кнопка open_app отключена, дальше отправляем ссылку"
+                )
+            elif 400 <= exc.status < 500:
+                # Любой другой отказ 4xx повтором не лечится: ретраи из очереди
+                # упрутся в ту же ошибку, и уведомление не дойдёт никогда.
+                # Это сообщение уходит со ссылкой, open_app для следующих остаётся.
+                log.warning(
+                    "MAX отклонил кнопку open_app (%s: %s) — это сообщение отправляем со ссылкой",
+                    exc.status,
+                    exc.body[:200],
+                )
+            else:
+                # 5xx — сбой на стороне MAX: очередь повторит сообщение целиком
                 raise
-            _open_app_supported = False
-            log.warning(
-                "Мини-приложение ещё не привязано к боту организаторами — "
-                "кнопка open_app отключена, дальше отправляем ссылку"
-            )
 
     public_url = settings.MINIAPP_PUBLIC_URL.strip().rstrip("/")
     if public_url.startswith("https://"):

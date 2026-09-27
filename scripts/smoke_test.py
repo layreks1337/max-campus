@@ -4,16 +4,19 @@
 Проходит путь, который на защите показывают вживую:
 студент привязывается -> подаёт справку -> деканат принимает, подписывает
 и выдаёт -> студенту уходит PDF -> документ проверяется по QR.
-Плюс ассистент, календарь, возможности и матчинг.
+Плюс ассистент, календарь, возможности, матчинг и базовые проверки безопасности.
 
 Запуск:  python scripts/smoke_test.py [http://127.0.0.1:8000]
 """
 
 from __future__ import annotations
 
+import http.client
 import json
+import secrets
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000").rstrip("/")
@@ -323,6 +326,55 @@ if llm_on:
             print()
 else:
     notes.append("Ассистент выключен — не заданы YC_API_KEY/YC_FOLDER_ID")
+
+section("13. Безопасность")
+
+
+def raw_get(path: str) -> tuple[int, str]:
+    """GET без нормализации пути клиентом — как `curl --path-as-is`.
+
+    urllib и браузеры схлопывают `..` ещё до отправки, а атакующий шлёт путь
+    как есть. http.client передаёт строку запроса побайтно.
+    """
+    parts = urllib.parse.urlsplit(BASE)
+    conn_cls = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+    conn = conn_cls(parts.hostname, parts.port, timeout=30)
+    try:
+        conn.request("GET", parts.path.rstrip("/") + path)
+        resp = conn.getresponse()
+        return resp.status, resp.read().decode("utf-8", "replace")
+    finally:
+        conn.close()
+
+
+try:
+    status, page = raw_get("/..%2F..%2F..%2Fetc%2Fpasswd")
+    check(
+        "обход папки сборки отдаёт index.html, а не /etc/passwd",
+        status == 200 and 'id="root"' in page and "root:x:" not in page,
+        f"{status}: {page[:80]!r}",
+    )
+except Exception as exc:  # noqa: BLE001
+    check("обход папки сборки отдаёт index.html, а не /etc/passwd", False, str(exc))
+
+status, res = call("GET", "/api/me", "dev:12345:X")
+check("dev-вход с нетестовым id отклоняется (401)", status == 401, f"получили {status}")
+
+# Случайный секрет заведомо не совпадёт с настоящим. Тело без пользователя —
+# даже если сервер его примет, обрабатывать нечего.
+fake = urllib.request.Request(
+    f"{BASE}/webhook/max",
+    data=json.dumps({"update_type": "smoke_test"}).encode(),
+    method="POST",
+    headers={"Content-Type": "application/json", "X-Max-Bot-Api-Secret": secrets.token_hex(16)},
+)
+try:
+    with urllib.request.urlopen(fake, timeout=30) as resp:
+        status = resp.status
+except urllib.error.HTTPError as exc:
+    status = exc.code
+check("вебхук с чужим секретом отклоняется (403)", status == 403,
+      f"получили {status} — задан ли MAX_WEBHOOK_SECRET?")
 
 section("ИТОГ")
 print(f"  успешно: {passed}")

@@ -173,15 +173,60 @@ async def verify_page(doc_uuid: str, session: SessionDep) -> HTMLResponse:
 
 _seen_updates: dict[str, float] = {}
 
+# Один раз за процесс: пишем в лог, пришёл ли у первого вебхука заголовок секрета
+# (сам секрет не пишем никогда), и предупреждаем про вебхуки без него. По этой
+# строке решается, можно ли включать MAX_WEBHOOK_REQUIRE_SECRET.
+_webhook_header_logged = False
+_webhook_no_secret_warned = False
+
+
+def _check_webhook_secret(request: HttpRequest) -> bool:
+    """Пропускать ли вебхук. Неверный секрет — всегда нет; без секрета — по флагу.
+
+    Только заголовок: секрет в строке запроса осел бы в журнале доступа.
+    """
+    global _webhook_header_logged, _webhook_no_secret_warned
+
+    header = request.headers.get("X-Max-Bot-Api-Secret")
+    expected = settings.MAX_WEBHOOK_SECRET
+    if header and expected and not hmac.compare_digest(header.encode(), expected.encode()):
+        # Такой запрос прислал не MAX (подделка или смоук-тест после выкладки),
+        # поэтому он не занимает «первый вебхук» в логе ниже.
+        log.warning("Вебхук с неверным секретом отклонён")
+        return False
+
+    if not _webhook_header_logged:
+        _webhook_header_logged = True
+        log.info(
+            "Первый вебхук после старта: заголовок X-Max-Bot-Api-Secret %s",
+            "есть" if header else "отсутствует",
+        )
+
+    if header or not expected:
+        return True
+    if settings.MAX_WEBHOOK_REQUIRE_SECRET:
+        log.warning("Вебхук без заголовка секрета отклонён")
+        return False
+    if not _webhook_no_secret_warned:
+        _webhook_no_secret_warned = True
+        log.warning(
+            "вебхук без заголовка секрета — принят, потому что MAX_WEBHOOK_REQUIRE_SECRET=false"
+        )
+    return True
+
 
 @router.post("/webhook/max", summary="Вебхук Bot API")
 async def max_webhook(request: HttpRequest, session: SessionDep) -> dict:
-    """Отвечаем 200 всегда и быстро: иначе таймаут -> ретрай -> дубли у пользователя."""
-    secret = request.headers.get("X-Max-Bot-Api-Secret") or request.query_params.get("secret")
-    if settings.MAX_WEBHOOK_SECRET and secret:
-        if not hmac.compare_digest(secret, settings.MAX_WEBHOOK_SECRET):
-            log.warning("Вебхук с неверным секретом")
-            return {"ok": True}
+    """Отвечаем 200 всегда и быстро: иначе таймаут -> ретрай -> дубли у пользователя.
+
+    Исключение — запрос не прошёл проверку секрета: это не MAX, а подделка,
+    ей 403 и никакой обработки.
+    """
+    if not _check_webhook_secret(request):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "BAD_WEBHOOK_SECRET", "message": "Неверный секрет вебхука"},
+        )
 
     try:
         body = await request.json()

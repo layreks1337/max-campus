@@ -52,6 +52,15 @@ declare global {
 
 const DEV_USER_KEY = "campus.devUser";
 
+/** Диапазон тестовых id: dev-вход бэкенд пускает только сюда, чтобы без подписи
+ *  нельзя было представиться настоящим пользователем MAX.
+ *  Те же границы — в backend/app/core/config.py, менять вместе. */
+export const TEST_USER_ID_MIN = 900_000;
+export const TEST_USER_ID_MAX = 999_999;
+
+export const isTestUserId = (id: number): boolean =>
+  Number.isInteger(id) && id >= TEST_USER_ID_MIN && id <= TEST_USER_ID_MAX;
+
 /** Есть ли настоящий Bridge. */
 export const isInsideMax = (): boolean =>
   typeof window !== "undefined" && !!window.WebApp?.initData;
@@ -60,7 +69,14 @@ export const isInsideMax = (): boolean =>
 export function getDevUser(): { id: number; name: string } {
   try {
     const raw = localStorage.getItem(DEV_USER_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      // id вне тестового диапазона (сохранён до ограничения) бэкенд не пустит —
+      // вместо вечного 401 возвращаемся к пользователю по умолчанию
+      if (isTestUserId(Number(saved?.id))) {
+        return { id: Number(saved.id), name: String(saved.name ?? "Dev") };
+      }
+    }
   } catch {
     /* поломанный localStorage — не повод падать */
   }
@@ -106,6 +122,18 @@ export function setBackButton(handler: (() => void) | null): () => void {
     bb.offClick(handler);
     bb.hide();
   };
+}
+
+/** Закрыть мини-приложение. Вне MAX закрывать нечего — вернёт false. */
+export function closeApp(): boolean {
+  const app = window.WebApp;
+  if (!app?.close) return false;
+  try {
+    app.close();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function openExternal(url: string): void {

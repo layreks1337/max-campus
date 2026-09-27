@@ -1,0 +1,14 @@
+# Контекст сборки — корень репозитория (backend/Dockerfile). Лишнее не везём:
+# виндовые node_modules легли бы поверх линуксовых после npm install,
+# .env и tmp — секреты и черновики, в образе им не место.
+.git
+.env
+**/.env
+tmp
+frontend/node_modules
+frontend/dist
+backend/.venv
+**/__pycache__
+# Сгенерированные справки и загрузки локального запуска — данные студентов
+data
+backend/data

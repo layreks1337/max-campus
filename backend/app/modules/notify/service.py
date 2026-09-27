@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.config import is_test_user_id, settings
 from app.core.dates import UNIVERSITY_TZ
 from app.db.models import OUT_FAILED, OUT_PENDING, OUT_SENT, Outbox, utcnow
 from app.db.session import SessionLocal
@@ -43,12 +43,12 @@ async def enqueue(
 
     Синтетические пользователи не получают ничего: демо-соседи из сида имеют
     отрицательный max_user_id, тестовые аккаунты режима разработки лежат
-    в диапазоне 900000–900999. Иначе бот стучится в несуществующие аккаунты
-    и засоряет очередь бесконечными ретраями.
+    в диапазоне TEST_USER_ID_MIN..TEST_USER_ID_MAX (core/config.py). Иначе бот
+    стучится в несуществующие аккаунты и засоряет очередь бесконечными ретраями.
     """
     if not max_user_id or max_user_id <= 0:
         return None
-    if settings.ALLOW_DEV_AUTH and 900_000 <= max_user_id <= 900_999:
+    if settings.ALLOW_DEV_AUTH and is_test_user_id(max_user_id):
         log.debug("Пропускаем уведомление тестовому пользователю %s", max_user_id)
         return None
 

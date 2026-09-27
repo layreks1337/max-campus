@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, unquote
 
-from app.core.config import settings
+from app.core.config import TEST_USER_ID_MAX, TEST_USER_ID_MIN, is_test_user_id, settings
 
 
 class InitDataError(Exception):
@@ -144,7 +144,9 @@ def parse_dev_auth(raw: str) -> InitData:
     """Режим разработки: `dev:<max_user_id>:<Имя>` — без подписи.
 
     Работает только при ALLOW_DEV_AUTH=true. Нужен, чтобы открывать приложение
-    в обычном браузере, где Bridge недоступен.
+    в обычном браузере, где Bridge недоступен. Пускает только тестовые id
+    (TEST_USER_ID_MIN..TEST_USER_ID_MAX): без подписи нельзя представиться
+    настоящим пользователем MAX и читать его заявки и документы.
     """
     if not settings.ALLOW_DEV_AUTH:
         raise InitDataError("dev-авторизация отключена")
@@ -155,6 +157,10 @@ def parse_dev_auth(raw: str) -> InitData:
         user_id = int(parts[1])
     except ValueError as exc:
         raise InitDataError("dev: id должен быть числом") from exc
+    if not is_test_user_id(user_id):
+        raise InitDataError(
+            f"dev-вход только для тестовых id {TEST_USER_ID_MIN}–{TEST_USER_ID_MAX}"
+        )
     name = parts[2] if len(parts) > 2 else "Dev User"
     return InitData(
         user=MaxUser(id=user_id, first_name=name, username=f"dev{user_id}"),

@@ -53,6 +53,31 @@ export class ApiException extends Error {
   }
 }
 
+/* ── Протухшая сессия ───────────────────────────────────────────
+   401 значит одно: сервер больше не принимает подпись запуска (MAX выдаёт её
+   один раз при открытии, срок — час). Каждый экран это не обработает, поэтому
+   сигнал общий: App подписывается и показывает полноэкранную заглушку
+   «Сессия устарела» вместо сырой ошибки посреди сценария. */
+
+let sessionExpired = false;
+const expiredListeners = new Set<() => void>();
+
+export const isSessionExpired = (): boolean => sessionExpired;
+
+/** Подписка на протухание сессии. Возвращает отписку — удобно для useEffect. */
+export function onSessionExpired(cb: () => void): () => void {
+  expiredListeners.add(cb);
+  return () => {
+    expiredListeners.delete(cb);
+  };
+}
+
+function markSessionExpired(): void {
+  if (sessionExpired) return;
+  sessionExpired = true;
+  expiredListeners.forEach((cb) => cb());
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -88,6 +113,7 @@ async function request<T>(
   }
 
   if (!resp.ok) {
+    if (resp.status === 401) markSessionExpired();
     const err = (data as { error?: { code?: string; message?: string; details?: Record<string, unknown> } })
       ?.error;
     throw new ApiException(
@@ -191,6 +217,7 @@ export const api = {
       },
       body: pcm,
     });
+    if (resp.status === 401) markSessionExpired();
     if (!resp.ok) throw new ApiException(resp.status, "STT_FAILED", "Не удалось распознать речь");
     return (await resp.json()) as { text: string };
   },

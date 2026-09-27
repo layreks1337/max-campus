@@ -9,6 +9,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+# Тестовые аккаунты dev-входа. Настоящие id в MAX, которые встречались, —
+# восьмизначные, шестизначный диапазон с ними не пересекается. Dev-вход пускает
+# только сюда, уведомления сюда не уходят — таких аккаунтов в MAX нет.
+# Границы продублированы во фронтенде (frontend/src/shared/max.ts), менять вместе.
+TEST_USER_ID_MIN = 900_000
+TEST_USER_ID_MAX = 999_999
+
+
+def is_test_user_id(user_id: int) -> bool:
+    return TEST_USER_ID_MIN <= user_id <= TEST_USER_ID_MAX
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(REPO_ROOT / ".env", REPO_ROOT / "backend" / ".env"),
@@ -28,6 +40,10 @@ class Settings(BaseSettings):
     MAX_BOT_TOKEN: str = ""
     MAX_API_BASE: str = "https://platform-api2.max.ru"
     MAX_WEBHOOK_SECRET: str = "change-me"
+    # Отклонять вебхук без заголовка X-Max-Bot-Api-Secret. Пока не подтверждено
+    # по логам, что MAX присылает заголовок, выключено: иначе бот оглохнет.
+    # Неверный секрет отклоняется всегда, независимо от флага.
+    MAX_WEBHOOK_REQUIRE_SECRET: bool = False
     # Сторож вебхука: при старте и каждые 30 минут сверять подписку бота с
     # MINIAPP_PUBLIC_URL и снимать чужие. Включать только на основном сервере —
     # иначе локальный запуск уведёт бота с него.
@@ -37,9 +53,13 @@ class Settings(BaseSettings):
     # Лимит платформы — 30 rps. Держим запас.
     MAX_RATE_LIMIT_RPS: float = 20.0
 
-    INIT_DATA_TTL_SECONDS: int = 900
+    # Срок жизни подписи запуска. Bridge выдаёт её один раз при открытии
+    # приложения, поэтому короче часа нельзя — сессия умирает посреди сценария.
+    # Час рекомендует документация MAX Bridge.
+    INIT_DATA_TTL_SECONDS: int = 3600
     # Режим разработки: пускать без валидации подписи (браузер вне MAX).
-    # В production ОБЯЗАТЕЛЬНО False.
+    # Только для тестовых id из TEST_USER_ID_MIN..TEST_USER_ID_MAX — выдать себя
+    # за настоящего пользователя MAX так нельзя.
     ALLOW_DEV_AUTH: bool = True
 
     # ── База данных ───────────────────────────────────────────────
