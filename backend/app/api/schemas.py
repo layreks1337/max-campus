@@ -83,6 +83,8 @@ class TemplateField(BaseModel):
     maxLength: int | None = None
     accept: list[str] | None = None
     maxSizeMb: int | None = None
+    # заполненное поле делает заявку нетиповой — её проверит сотрудник
+    manual_review: bool = False
 
 
 class TemplateOut(BaseModel):
@@ -94,6 +96,7 @@ class TemplateOut(BaseModel):
     category: str
     sla_days: int
     produces_document: bool
+    auto_issue: bool = False
     fields: list[TemplateField] = Field(default_factory=list)
 
 

@@ -72,6 +72,9 @@ async def _prepare_database() -> None:
             await conn.execute(text(
                 f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS details_json JSONB NOT NULL DEFAULT '{{}}'"
             ))
+        await conn.execute(text(
+            "ALTER TABLE request_template ADD COLUMN IF NOT EXISTS auto_issue BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
     log.info("Схема БД готова")
 
 

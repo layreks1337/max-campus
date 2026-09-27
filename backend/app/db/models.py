@@ -206,6 +206,9 @@ class RequestTemplate(Base):
     route_json: Mapped[list] = mapped_column(JSONB, default=list)
     doc_template: Mapped[str] = mapped_column(String(64), default="generic")
     produces_document: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Типовой документ выдаётся сразу при подаче, без очереди сотрудника.
+    # Поля с флагом manual_review в schema_json возвращают заявку в очередь.
+    auto_issue: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=100)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 

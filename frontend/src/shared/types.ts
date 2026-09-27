@@ -63,6 +63,8 @@ export interface TemplateField {
   maxLength?: number | null;
   accept?: string[] | null;
   maxSizeMb?: number | null;
+  /** Заполненное поле делает заявку нетиповой — её проверит сотрудник */
+  manual_review?: boolean;
 }
 
 export interface Template {
@@ -74,6 +76,8 @@ export interface Template {
   category: string;
   sla_days: number;
   produces_document: boolean;
+  /** Типовой документ выдаётся сразу при подаче, без очереди деканата */
+  auto_issue: boolean;
   fields: TemplateField[];
 }
 

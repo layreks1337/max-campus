@@ -4,6 +4,7 @@
 Проходит путь, который на защите показывают вживую:
 студент привязывается -> подаёт справку -> деканат принимает, подписывает
 и выдаёт -> студенту уходит PDF -> документ проверяется по QR.
+Типовая справка (без оригинала и комментария) выдаётся автоматически в том же запросе.
 Плюс ассистент, календарь, возможности, матчинг, базовые проверки безопасности
 и демо-вход экспертов: своя копия студента, роль деканата в один тап, своя очередь.
 В конце — вход по подписанной ссылке из бота (?lt=…): секрет берётся из LINK_SECRET
@@ -124,6 +125,8 @@ if isinstance(templates, list):
 
 status, tpl = call("GET", "/api/requests/templates/study_certificate", STUDENT)
 check("схема полей отдаётся", status == 200 and bool(tpl.get("fields")))
+check("справка об обучении — с автовыдачей (флаг шаблона)",
+      isinstance(tpl, dict) and tpl.get("auto_issue") is True, str(tpl)[:160])
 
 section("4. Подача заявки и валидация формы")
 status, res = call(
@@ -151,6 +154,35 @@ check("заявка создана", status in (200, 201), str(req))
 public_no = req.get("public_no") if isinstance(req, dict) else None
 if public_no:
     print(f"       №{public_no} · статус: {req['status_title']} · срок до {req.get('due_at', '')[:10]}")
+# Оригинал с печатью и особая формулировка — нетиповая справка: автомат её не трогает
+check("нетиповая справка (оригинал, комментарий) — в очередь сотрудника",
+      isinstance(req, dict) and req.get("status") == "SUBMITTED" and not req.get("document"),
+      str(req.get("status") if isinstance(req, dict) else req))
+
+section("4б. Автовыдача типовой справки")
+AUTO_ISSUER = "Демо-деканат (автоматическая выдача)"
+status, auto = call(
+    "POST", "/api/requests", STUDENT,
+    {"template_key": "study_certificate", "payload": {"purpose": "В банк", "copies": 1}},
+)
+check("типовая справка выдана в том же запросе",
+      status in (200, 201) and isinstance(auto, dict) and auto.get("status") == "ISSUED",
+      f"{status} {str(auto)[:200]}")
+auto_doc = (auto.get("document") or {}) if isinstance(auto, dict) else {}
+check("документ приложен, выдал автомат",
+      auto_doc.get("issued_by") == AUTO_ISSUER, str(auto_doc)[:200])
+auto_steps = [e["to_status"] for e in auto.get("events", [])] if isinstance(auto, dict) else []
+check("шаги — те же, что у сотрудника",
+      auto_steps == ["SUBMITTED", "IN_REVIEW", "SIGNING", "READY", "ISSUED"], str(auto_steps))
+if auto_doc.get("uuid"):
+    print(f"       №{auto['public_no']} · {auto['status_title']} · {auto_doc['file_name']}")
+    try:
+        with urllib.request.urlopen(f"{BASE}/api/documents/{auto_doc['uuid']}", timeout=60) as r:
+            content = r.read()
+        check("PDF автовыдачи скачивается", content[:4] == b"%PDF" and len(content) > 3000,
+              f"{len(content)} байт, начало {content[:8]!r}")
+    except Exception as exc:  # noqa: BLE001
+        check("PDF автовыдачи скачивается", False, str(exc))
 
 section("5. Роль деканата")
 status, staff_me = call("POST", "/api/binding/staff", CLERK, {"code": "STAFF-001"})

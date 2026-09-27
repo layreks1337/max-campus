@@ -1,12 +1,14 @@
 /** Заявка: степпер статуса, детали, документ.
  *
  *  Степпер — главный ответ на боль «отправил письмо и сижу в тишине»:
- *  видно, где заявка сейчас, кто её вёл и сколько осталось. */
+ *  видно, где заявка сейчас, кто её вёл и сколько осталось.
+ *  Типовую справку сервер выдаёт сразу при подаче — тогда степпер
+ *  проигрывает её шаги по очереди (useReplay). */
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Download, FileCheck2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { GlassIcon } from "@/components/ui/glass-icon";
@@ -37,7 +39,10 @@ export default function RequestDetail() {
   const [answer, setAnswer] = useState("");
   const [sending, setSending] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+  const fresh = Boolean((location.state as { fresh?: boolean } | null)?.fresh);
+  const replayStage = useReplay(request, fresh);
 
   const load = useCallback(async () => {
     if (!no) return;
@@ -64,7 +69,11 @@ export default function RequestDetail() {
   }
   if (!request) return null;
 
-  const tone = statusTone(request.status);
+  const replaying = replayStage !== null;
+  const auto = autoIssued(request);
+  // Пока идёт проигрывание, шапка показывает шаг, а не итоговый статус
+  const shownStatus = replaying ? STATUS_FLOW[replayStage] : request.status;
+  const tone = statusTone(shownStatus);
   const terminal = ["ISSUED", "REJECTED", "CANCELLED"].includes(request.status);
 
   const cancel = async () => {
@@ -93,12 +102,12 @@ export default function RequestDetail() {
 
   return (
     <div className="px-4 pb-28 safe-top">
-      <Celebrate request={request} />
+      {!replaying && <Celebrate request={request} />}
       <header className="mb-6 px-1">
         <div className="mb-2 flex items-center gap-2">
-          <StatusDot tone={tone} pulse={request.is_active} />
+          <StatusDot tone={tone} pulse={request.is_active || replaying} />
           <span className={cn("text-[13px] font-semibold", TONE_TEXT[tone])}>
-            {request.status_title}
+            {replaying ? STATUS_TITLES[shownStatus] : request.status_title}
           </span>
           <span className="ml-auto font-mono text-[12px] text-faint">
             №{request.public_no}
@@ -120,7 +129,12 @@ export default function RequestDetail() {
         </Card>
       )}
 
-      {request.document && (
+      {request.document && !replaying && (
+        <motion.div
+          initial={fresh ? { opacity: 0, y: 14 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+        >
         <Card className="mb-4">
           <div className="mb-4 flex items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ok/15 text-ok">
@@ -154,11 +168,23 @@ export default function RequestDetail() {
             </p>
           )}
         </Card>
+        </motion.div>
       )}
 
       <Card className="mb-4">
         <p className="mb-4 text-[13px] font-semibold text-muted">Как продвигается</p>
-        <Stepper request={request} />
+        <Stepper request={request} upTo={replayStage} />
+        {auto && (
+          <>
+            <Divider className="my-4" />
+            <p className="text-[13px] leading-snug text-muted">
+              {replaying
+                ? "Справка типовая — проводим по шагам автоматически…"
+                : "Выдана автоматически по данным деканата: справка типовая. " +
+                  "Нетиповые заявки проверяет сотрудник."}
+            </p>
+          </>
+        )}
         {request.is_active && request.due_at && (
           <>
             <Divider className="my-4" />
@@ -220,32 +246,39 @@ export default function RequestDetail() {
 
 /* ── Степпер ───────────────────────────────────────────────────── */
 
-function Stepper({ request }: { request: CampusRequest }) {
+function Stepper({ request, upTo = null }: { request: CampusRequest; upTo?: number | null }) {
   const byStatus = new Map(request.events.map((e) => [e.to_status, e]));
   const rejected = ["REJECTED", "CANCELLED"].includes(request.status);
+  // upTo — шаг, до которого дошло проигрывание автовыдачи; null — показываем факт
+  const replaying = upTo !== null && !rejected;
 
   const steps = rejected
     ? [...request.events.map((e) => e.to_status)]
     : STATUS_FLOW;
 
-  const currentIndex = steps.indexOf(request.status);
+  const status = replaying ? steps[upTo] : request.status;
+  const currentIndex = steps.indexOf(status);
 
   return (
     <div className="flex flex-col">
-      {steps.map((status, i) => {
-        const event = byStatus.get(status);
+      {steps.map((step, i) => {
+        const event = replaying && i > upTo ? undefined : byStatus.get(step);
         const done = event !== undefined;
-        const current = status === request.status;
+        const current = step === status;
         const last = i === steps.length - 1;
-        const tone = rejected && last ? statusTone(status) : current ? "accent" : "ok";
+        const tone = rejected && last ? statusTone(step) : current ? "accent" : "ok";
+        // Первый показ — волной сверху вниз; при проигрывании шаг загорается сразу
+        const delay = replaying ? 0 : 0.12 * i;
 
         return (
-          <div key={status} className="flex gap-3">
+          <div key={step} className="flex gap-3">
             <div className="flex w-4 shrink-0 flex-col items-center">
               <motion.span
+                // новый ключ, когда шаг выполнен, — точка «выпрыгивает» заново
+                key={done ? "done" : "todo"}
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                transition={{ delay: 0.12 * i, type: "spring", stiffness: 500, damping: 22 }}
+                transition={{ delay, type: "spring", stiffness: 500, damping: 22 }}
                 className={cn(
                   "mt-1.5 h-2.5 w-2.5 rounded-full",
                   done ? (current ? `bg-${tone === "accent" ? "accent" : "ok"}` : "bg-ok") : "bg-hairline",
@@ -265,7 +298,7 @@ function Stepper({ request }: { request: CampusRequest }) {
                       style={{ background: "var(--ok)" }}
                       initial={{ scaleY: 0 }}
                       animate={{ scaleY: 1 }}
-                      transition={{ delay: 0.12 * i + 0.08, duration: 0.35, ease: "easeOut" }}
+                      transition={{ delay: delay + 0.08, duration: 0.35, ease: "easeOut" }}
                     />
                   )}
                 </span>
@@ -279,13 +312,18 @@ function Stepper({ request }: { request: CampusRequest }) {
                   done ? "font-semibold text-ink" : "text-faint",
                 )}
               >
-                {STATUS_TITLES[status] ?? status}
+                {STATUS_TITLES[step] ?? step}
               </p>
               {event && (
-                <p className="mt-0.5 text-[12px] text-faint">
+                <motion.p
+                  initial={replaying ? { opacity: 0, y: -3 } : false}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="mt-0.5 text-[12px] text-faint"
+                >
                   {dateTimeRu(event.created_at)}
                   {event.actor_name && ` · ${event.actor_name}`}
-                </p>
+                </motion.p>
               )}
             </div>
           </div>
@@ -293,6 +331,68 @@ function Stepper({ request }: { request: CampusRequest }) {
       })}
     </div>
   );
+}
+
+/* ── Проигрывание автовыдачи ───────────────────────────────────── */
+
+/** Выдана ли заявка автоматически: у сотрудника actor_kind «staff», у автовыдачи — «system». */
+function autoIssued(r: CampusRequest): boolean {
+  return r.events.some((e) => e.to_status === "ISSUED" && e.actor_kind === "system");
+}
+
+const REPLAY_STEP_MS = 650;
+
+function replayedKey(no: string): string {
+  return `campus.replayed.${no}`;
+}
+
+function wasReplayed(no: string): boolean {
+  try {
+    return Boolean(sessionStorage.getItem(replayedKey(no)));
+  } catch {
+    return false;
+  }
+}
+
+/** Автовыдача проходит все шаги за доли секунды, и экран открылся бы сразу
+ *  на «Выдана». Сразу после подачи шаги проигрываются по очереди: видно, что
+ *  заявка прошла тот же маршрут, что и у сотрудника. Один раз на заявку.
+ *  Возвращает индекс шага в STATUS_FLOW или null, если проигрывать нечего. */
+function useReplay(request: CampusRequest | null, fresh: boolean): number | null {
+  const [stage, setStage] = useState(0);
+  const [finished, setFinished] = useState(false);
+  const no = request?.public_no ?? "";
+  const active =
+    !finished &&
+    fresh &&
+    request !== null &&
+    request.status === "ISSUED" &&
+    autoIssued(request) &&
+    !wasReplayed(no);
+  const lastStage = STATUS_FLOW.length - 1;
+
+  useEffect(() => {
+    if (!active) return;
+    if (stage >= lastStage) {
+      // На «Выдана» — короткая пауза, потом карточка документа и конфетти
+      const t = setTimeout(() => {
+        try {
+          sessionStorage.setItem(replayedKey(no), "1");
+        } catch {
+          /* без sessionStorage проиграем и при следующем входе — не страшно */
+        }
+        setFinished(true);
+      }, REPLAY_STEP_MS / 2);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => {
+      setStage((s) => s + 1);
+      haptic();
+    }, REPLAY_STEP_MS);
+    return () => clearTimeout(t);
+  }, [active, stage, lastStage, no]);
+
+  return active ? stage : null;
 }
 
 /* ── Человекочитаемые подписи полей ────────────────────────────── */

@@ -17,9 +17,18 @@ import {
 } from "@/components/ui/fields";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
-import type { Template, TemplateField } from "@/shared/types";
+import type { CampusRequest, Template, TemplateField } from "@/shared/types";
 
 type Values = Record<string, unknown>;
+
+/** То же правило, что engine.can_auto_issue на сервере: поле считается
+ *  заполненным, если значение не пустое и не совпадает со значением по умолчанию. */
+function isFilled(field: TemplateField, value: unknown): boolean {
+  if (value === undefined || value === null || value === false) return false;
+  if (typeof value === "string" && value.trim() === "") return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  return value !== field.default;
+}
 
 function initialValues(fields: TemplateField[]): Values {
   const out: Values = {};
@@ -37,7 +46,7 @@ export function DynamicForm({
   onSubmitted,
 }: {
   template: Template;
-  onSubmitted: (publicNo: string) => void;
+  onSubmitted: (created: CampusRequest) => void;
 }) {
   const toast = useToast();
   const [values, setValues] = useState<Values>(() => initialValues(template.fields));
@@ -78,8 +87,7 @@ export function DynamicForm({
     setSending(true);
     setErrors({});
     try {
-      const created = await api.createRequest(template.key, values);
-      onSubmitted(created.public_no);
+      onSubmitted(await api.createRequest(template.key, values));
     } catch (e) {
       if (e instanceof ApiException) {
         const fieldErrors = e.fieldErrors;
@@ -96,6 +104,11 @@ export function DynamicForm({
       setSending(false);
     }
   };
+
+  // Типовая заявка выдаётся сразу; заполненное поле с manual_review (особая
+  // формулировка, бумажный оригинал) отправляет её в очередь сотрудника
+  const manual = template.fields.some((f) => f.manual_review && isFilled(f, values[f.name]));
+  const instant = template.auto_issue && template.produces_document && !manual;
 
   return (
     <div>
@@ -187,10 +200,14 @@ export function DynamicForm({
 
       <div className="sticky bottom-0 -mx-5 mt-2 bg-gradient-to-t from-canvas via-canvas to-transparent px-5 pt-4 pb-24">
         <Button full size="lg" loading={sending} onClick={submit}>
-          Отправить заявку
+          {instant ? "Получить PDF сразу" : "Отправить заявку"}
         </Button>
         <p className="mt-3 text-center text-[12px] text-faint">
-          Срок рассмотрения — около {template.sla_days} дн. Статус придёт в чат.
+          {instant
+            ? "Типовой документ выдаётся автоматически — PDF придёт в чат с ботом."
+            : template.auto_issue && manual
+              ? `С этими пожеланиями заявку проверит сотрудник — около ${template.sla_days} дн. Статус придёт в чат.`
+              : `Срок рассмотрения — около ${template.sla_days} дн. Статус придёт в чат.`}
         </p>
       </div>
     </div>

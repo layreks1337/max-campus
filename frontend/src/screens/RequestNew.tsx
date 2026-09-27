@@ -75,17 +75,25 @@ export default function RequestNew() {
           <h1 className="mb-2 text-[26px] leading-tight">{active.title}</h1>
           <p className="text-[15px] leading-relaxed text-muted">{active.description}</p>
           <p className="mt-3 text-[13px] text-faint">
-            Обычно занимает {active.sla_days}{" "}
-            {plural(active.sla_days, "день", "дня", "дней")}
-            {active.produces_document && " · документ придёт файлом в чат"}
+            {active.auto_issue ? (
+              "Типовая — выдаётся автоматически за секунды · PDF придёт файлом в чат"
+            ) : (
+              <>
+                Обычно занимает {active.sla_days}{" "}
+                {plural(active.sla_days, "день", "дня", "дней")}
+                {active.produces_document && " · документ придёт файлом в чат"}
+              </>
+            )}
           </p>
         </div>
 
         <DynamicForm
           template={active}
-          onSubmitted={(no) => {
-            toast.ok("Заявка отправлена");
-            navigate(`/requests/${no}`, { replace: true });
+          onSubmitted={(created) => {
+            // Выданную сразу справку празднует экран заявки после проигрывания шагов
+            if (created.status !== "ISSUED") toast.ok("Заявка отправлена");
+            // fresh: экран заявки проиграет шаги автовыдачи, а не покажет их разом
+            navigate(`/requests/${created.public_no}`, { replace: true, state: { fresh: true } });
           }}
         />
       </div>
@@ -132,6 +140,11 @@ export default function RequestNew() {
               <span className="min-w-0 flex-1">
                 <span className="mb-0.5 block text-[16px] leading-snug font-semibold text-ink">
                   {t.short_title}
+                  {t.auto_issue && (
+                    <span className="ml-2 inline-block rounded-full bg-ok/15 px-2 py-0.5 align-middle text-[11px] font-semibold text-ok">
+                      сразу
+                    </span>
+                  )}
                 </span>
                 <span className="block truncate text-[13px] text-muted">{t.description}</span>
               </span>

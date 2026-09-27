@@ -98,7 +98,9 @@ class CampusPDF(FPDF):
                 self.ln(3)
         self.ln(4)
 
-    def signature_block(self, issued_by: str, position: str = "Специалист деканата") -> None:
+    def signature_block(
+        self, issued_by: str, position: str = "Специалист деканата", caption: str = "подпись"
+    ) -> None:
         self.ln(10)
         y = self.get_y()
         self.set_font("PT", "", 11)
@@ -112,7 +114,7 @@ class CampusPDF(FPDF):
         self.set_xy(115, y + 7)
         self.set_font("PT", "", 8)
         self.set_text_color(140, 140, 140)
-        self.cell(75, 5, "подпись", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(75, 5, caption, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     def verification_block(self, verify_url: str) -> None:
         qr = qrcode.QRCode(box_size=10, border=1)
@@ -224,8 +226,14 @@ def build_body(req: Request) -> str:
 # ── Публичная функция ─────────────────────────────────────────────
 
 
-def generate_document(req: Request, issued_by: str) -> tuple[str, Path, datetime]:
-    """Формирует PDF. Возвращает (uuid, путь к файлу, срок действия)."""
+def generate_document(
+    req: Request, issued_by: str, *, automatic: bool = False
+) -> tuple[str, Path, datetime]:
+    """Формирует PDF. Возвращает (uuid, путь к файлу, срок действия).
+
+    automatic — справку выдал не сотрудник, а автовыдача типовых документов:
+    в блоке подписи так и написано, без имитации росчерка.
+    """
     doc_uuid = str(uuid_lib.uuid4())
     now = utcnow()
     valid_until = now + timedelta(days=90)
@@ -236,8 +244,11 @@ def generate_document(req: Request, issued_by: str) -> tuple[str, Path, datetime
     pdf.header_block()
     pdf.title_block(req.template.short_title or req.template.title, req.public_no, now)
     pdf.body_text(build_body(req))
-    pdf.body_text(f"Действительна до {ru_date(valid_until)}.")
-    pdf.signature_block(issued_by)
+    pdf.body_text(f"Действительна до {ru_date(valid_until)}")  # ru_date уже с точкой: «г.»
+    if automatic:
+        pdf.signature_block(issued_by, "Выдано автоматически", "без подписи сотрудника")
+    else:
+        pdf.signature_block(issued_by)
     pdf.verification_block(verify_url)
 
     safe_title = (req.template.doc_template or "document").replace(" ", "_")
@@ -250,9 +261,9 @@ def generate_document(req: Request, issued_by: str) -> tuple[str, Path, datetime
 
 
 def make_document_record(
-    req: Request, issued_by: str
+    req: Request, issued_by: str, *, automatic: bool = False
 ) -> Document:
-    doc_uuid, path, valid_until = generate_document(req, issued_by)
+    doc_uuid, path, valid_until = generate_document(req, issued_by, automatic=automatic)
     safe_title = (req.template.doc_template or "document").replace(" ", "_")
     return Document(
         request_id=req.id,

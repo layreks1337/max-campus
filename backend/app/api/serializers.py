@@ -58,6 +58,7 @@ def template_out(t: RequestTemplate) -> TemplateOut:
         category=t.category,
         sla_days=max(1, round((t.sla_hours or 72) / 24)),
         produces_document=t.produces_document,
+        auto_issue=bool(t.auto_issue),
         fields=t.fields,
     )
 

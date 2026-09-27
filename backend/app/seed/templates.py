@@ -2,6 +2,10 @@
 
 Это ДАННЫЕ, а не код. Новый тип справки добавляется словарём в список ниже —
 ни одна строчка Python при этом не меняется. В этом весь смысл движка.
+
+`auto_issue: True` — типовой документ выдаётся сразу при подаче, по данным
+контингента, без очереди сотрудника. Поле с `manual_review: True`, если его
+заполнили, делает заявку нетиповой: она идёт в очередь деканата как обычно.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ TEMPLATES: list[dict] = [
         "sla_hours": 72,
         "doc_template": "study_certificate",
         "produces_document": True,
+        "auto_issue": True,
         "sort_order": 10,
         "schema_json": {
             "fields": [
@@ -47,6 +52,8 @@ TEMPLATES: list[dict] = [
                     "label": "Нужен оригинал с печатью",
                     "hint": "Электронную копию пришлём в чат в любом случае",
                     "default": False,
+                    # бумагу с печатью готовит человек — автоматом не выдать
+                    "manual_review": True,
                 },
                 {
                     "name": "comment",
@@ -54,6 +61,8 @@ TEMPLATES: list[dict] = [
                     "label": "Комментарий",
                     "placeholder": "Если есть особые требования к формулировке",
                     "maxLength": 500,
+                    # особая формулировка — нетиповая справка
+                    "manual_review": True,
                 },
             ]
         },

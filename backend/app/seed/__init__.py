@@ -52,7 +52,8 @@ async def seed_templates(session: AsyncSession) -> int:
             tpl = RequestTemplate(key=item["key"])
             session.add(tpl)
             created += 1
-        for field, value in item.items():
+        # Флаг, убранный из шаблона, должен сняться и в базе, а не остаться прежним
+        for field, value in {"auto_issue": False, **item}.items():
             if field != "key":
                 setattr(tpl, field, value)
     await session.flush()

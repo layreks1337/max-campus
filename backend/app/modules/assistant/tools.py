@@ -337,6 +337,12 @@ async def _list_request_templates(ctx: ToolContext) -> str:
             "title": t.title,
             "description": t.description,
             "days": round((t.sla_hours or 72) / 24),
+            # иначе модель пообещает «3 дня» там, где справка выдаётся сразу
+            **(
+                {"issued": "сразу при подаче, автоматически; с оригиналом или "
+                           "особыми требованиями — через сотрудника, в обычный срок"}
+                if t.auto_issue else {}
+            ),
         }
         for t in rows
     ]

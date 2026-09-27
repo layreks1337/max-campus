@@ -21,11 +21,7 @@ from app.db.models import (
     ACTIVE_STATUSES,
     ST_CANCELLED,
     ST_IN_REVIEW,
-    ST_ISSUED,
     ST_NEEDS_INFO,
-    ST_READY,
-    ST_SIGNING,
-    STATUS_TITLES,
     AuditLog,
     Request,
     RequestTemplate,
@@ -33,7 +29,7 @@ from app.db.models import (
 )
 from app.modules.demo.service import is_demo
 from app.modules.notify.service import enqueue
-from app.modules.requests import engine, pdf
+from app.modules.requests import engine, service
 
 log = logging.getLogger("api.requests")
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -112,20 +108,18 @@ async def create_request(
             },
         ) from exc
 
-    await enqueue(
-        session,
-        max_user_id=current.app_user.max_user_id,
-        kind="REQUEST_STATUS",
-        text=(
-            f"{tpl.icon} {tpl.short_title or tpl.title} · №{req.public_no}\n\n"
-            f"Заявка принята. Ориентировочный срок — "
-            f"{max(1, round((tpl.sla_hours or 72) / 24))} дн.\n"
-            "Сообщу, когда статус изменится."
-        ),
-        dedup_key=f"req:{req.id}:SUBMITTED",
-        open_app_label="Открыть заявку",
-        open_app_payload=f"req_{req.public_no}",
+    # Типовая справка выдаётся в этом же запросе: статусы → PDF → чат.
+    # Нетиповая (или если автовыдача сорвалась) остаётся в очереди сотрудника.
+    document = None
+    if engine.can_auto_issue(tpl, req.payload_json):
+        document = await service.auto_issue(session, req)
+
+    max_user_id = current.app_user.max_user_id
+    await service.notify_submitted(
+        session, req, max_user_id=max_user_id, automatic=document is not None
     )
+    if document is not None:
+        await service.notify_issued(session, req, document, max_user_id=max_user_id)
 
     res = await session.execute(_load_full(select(Request).where(Request.id == req.id)))
     return serializers.request_out(res.scalar_one())
@@ -276,7 +270,7 @@ async def staff_transition(
         )
     )
 
-    student_user = await _student_max_id(session, req)
+    student_user = await service.student_max_id(session, req)
     if student_user:
         await enqueue(
             session,
@@ -301,81 +295,12 @@ async def staff_issue(
     if req is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Не найдена"})
 
-    if req.status == ST_SIGNING:
-        await engine.transition(
-            session, req, ST_READY, actor_name=current.staff.full_name, comment="Подписано"
-        )
-    if req.status != ST_READY:
+    try:
+        document = await service.issue_document(session, req, issuer=current.staff.full_name)
+    except service.IssueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "BAD_TRANSITION",
-                "message": f"Выдать можно только из статуса «Готова», сейчас "
-                           f"«{STATUS_TITLES.get(req.status, req.status)}»",
-            },
-        )
-
-    document = None
-    if req.template.produces_document:
-        document = pdf.make_document_record(req, current.staff.full_name)
-        session.add(document)
-        await session.flush()
-
-    await engine.transition(
-        session,
-        req,
-        ST_ISSUED,
-        actor_name=current.staff.full_name,
-        comment="Документ выдан",
-    )
-    session.add(
-        AuditLog(
-            actor_name=current.staff.full_name,
-            action="request.issue",
-            entity_type="request",
-            entity_id=req.public_no,
-            details_json={"document_uuid": document.uuid if document else None},
-        )
-    )
-
-    student_user = await _student_max_id(session, req)
-    if student_user:
-        if document:
-            await enqueue(
-                session,
-                max_user_id=student_user,
-                kind="DOCUMENT_ISSUED",
-                text=(
-                    f"✅ {req.template.short_title or req.template.title} готова\n\n"
-                    f"№{req.public_no}\n"
-                    "Подлинность проверяется по QR-коду в документе."
-                ),
-                dedup_key=f"req:{req.id}:ISSUED:file",
-                file_path=document.file_path,
-            )
-        else:
-            await enqueue(
-                session,
-                max_user_id=student_user,
-                kind="REQUEST_STATUS",
-                text=engine.status_notification_text(req),
-                dedup_key=f"req:{req.id}:ISSUED",
-                open_app_label="Открыть заявку",
-                open_app_payload=f"req_{req.public_no}",
-            )
-
-    # Документ создан в этой же сессии — связь на объекте req ещё помнит старое
-    # значение (None). Обновляем её явно, иначе фронт не увидит выданный файл.
-    await session.refresh(req, attribute_names=["document", "events"])
+            detail={"code": "BAD_TRANSITION", "message": str(exc)},
+        ) from exc
+    await service.notify_issued(session, req, document)
     return serializers.request_out(req, with_student=True)
-
-
-async def _student_max_id(session, req: Request) -> int | None:
-    from app.db.models import AppUser, Binding
-
-    res = await session.execute(
-        select(AppUser.max_user_id)
-        .join(Binding, Binding.app_user_id == AppUser.id)
-        .where(Binding.student_id == req.student_id)
-    )
-    return res.scalar_one_or_none()

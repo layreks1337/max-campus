@@ -223,6 +223,26 @@ async def transition(
     return req
 
 
+# ── Автовыдача типовых документов ─────────────────────────────────
+
+
+def can_auto_issue(template: RequestTemplate, payload: dict[str, Any]) -> bool:
+    """Типовая ли заявка: шаблон разрешает автовыдачу, и не заполнено ни одно
+    поле с флагом manual_review (особая формулировка, бумажный оригинал).
+
+    Решает шаблон, а не код: флаги лежат в той же строке request_template.
+    """
+    if not template.auto_issue or not template.produces_document:
+        return False
+    for f in template.fields:
+        if not f.get("manual_review"):
+            continue
+        value = payload.get(f.get("name", ""))
+        if value not in (None, "", [], False) and value != f.get("default"):
+            return False
+    return True
+
+
 # ── Тексты уведомлений ────────────────────────────────────────────
 
 _STATUS_MESSAGES = {
