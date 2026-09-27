@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Сбрасывает следы прогонов: привязки живых пользователей, заявки, документы,
-# свайпы и диалоги ассистента. Справочники, шаблоны и база знаний остаются.
+# свайпы, диалоги ассистента и демо-копии студентов (DEMO-*) с их баллами,
+# опросами и голосами. Справочники, шаблоны и база знаний остаются.
 #
 # Нужен, когда демонстрацию показывают несколько раз подряд и коды привязки
 # должны снова стать доступными.
@@ -39,6 +40,21 @@ DELETE FROM match_profile WHERE app_user_id IN (SELECT id FROM app_user WHERE ma
 DELETE FROM binding WHERE method <> 'demo-seed';
 UPDATE binding_code SET used_at = NULL;
 
+-- Демо-копии экспертов (кнопка «Попробовать как студент», зачётка DEMO-<id>)
+-- и всё, что на них ссылается. Заявки уже удалены выше.
+CREATE TEMP TABLE demo_students ON COMMIT DROP AS
+  SELECT id FROM student WHERE record_book_no LIKE 'DEMO-%';
+DELETE FROM poll_vote WHERE student_id IN (SELECT id FROM demo_students)
+  OR poll_id IN (SELECT id FROM group_poll WHERE author_student_id IN (SELECT id FROM demo_students));
+DELETE FROM group_poll WHERE author_student_id IN (SELECT id FROM demo_students);
+DELETE FROM group_head WHERE student_id IN (SELECT id FROM demo_students);
+DELETE FROM grade_item WHERE student_id IN (SELECT id FROM demo_students);
+DELETE FROM event_registration WHERE student_id IN (SELECT id FROM demo_students);
+DELETE FROM opportunity_interest WHERE student_id IN (SELECT id FROM demo_students);
+DELETE FROM binding_code WHERE student_id IN (SELECT id FROM demo_students);
+DELETE FROM binding WHERE student_id IN (SELECT id FROM demo_students);
+DELETE FROM student WHERE id IN (SELECT id FROM demo_students);
+
 -- Очередь уведомлений
 DELETE FROM outbox;
 DELETE FROM audit_log;
@@ -52,6 +68,7 @@ docker exec "$CONTAINER" psql -U campus -d campus -c "
 SELECT 'свободных кодов привязки' AS показатель, count(*)::text AS значение
   FROM binding_code WHERE used_at IS NULL
 UNION ALL SELECT 'заявок', count(*)::text FROM request
+UNION ALL SELECT 'демо-копий студентов', count(*)::text FROM student WHERE record_book_no LIKE 'DEMO-%'
 UNION ALL SELECT 'объявлений в колоде', count(*)::text FROM intent WHERE active
 UNION ALL SELECT 'событий', count(*)::text FROM calendar_event
 UNION ALL SELECT 'чанков базы знаний', count(*)::text FROM kb_chunk;"

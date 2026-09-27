@@ -18,6 +18,7 @@ from app.db.models import (
     Swipe,
     utcnow,
 )
+from app.modules.demo.service import demo_filter
 from app.modules.notify.service import enqueue
 
 log = logging.getLogger("match")
@@ -222,12 +223,18 @@ async def run_buddy_matcher(session: AsyncSession, limit: int = 20) -> int:
     if not seekers:
         return 0
 
+    # Демо-копии экспертов наставниками не назначаются: иначе бот знакомил бы
+    # экспертов друг с другом и раздавал их @username
     res = await session.execute(
         select(MatchProfile, Student, AppUser)
         .join(AppUser, AppUser.id == MatchProfile.app_user_id)
         .join(Binding, Binding.app_user_id == MatchProfile.app_user_id)
         .join(Student, Student.id == Binding.student_id)
-        .where(MatchProfile.wants_mentee.is_(True), MatchProfile.visible.is_(True))
+        .where(
+            MatchProfile.wants_mentee.is_(True),
+            MatchProfile.visible.is_(True),
+            ~demo_filter(),
+        )
     )
     mentors = list(res.all())
     if not mentors:

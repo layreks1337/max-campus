@@ -26,6 +26,7 @@ from app.db.models import (
     utcnow,
 )
 from app.db.session import SessionLocal
+from app.modules.demo.service import demo_filter
 from app.modules.match.service import expire_intents, run_buddy_matcher
 from app.modules.notify.service import enqueue
 
@@ -178,11 +179,13 @@ async def class_reminders() -> int:
             until = int(h) * 60 + int(m) - minutes
             if not 5 <= until <= 20:
                 continue
+            # Демо-копии экспертов — без напоминаний: первая пара в 08:00 по Иркутску —
+            # это 03:00 МСК, и эксперт получал бы сообщение ночью
             res = await session.execute(
                 select(AppUser.max_user_id, Student.id)
                 .join(Binding, Binding.app_user_id == AppUser.id)
                 .join(Student, Student.id == Binding.student_id)
-                .where(Student.group_name == group)
+                .where(Student.group_name == group, ~demo_filter())
             )
             place = f"ауд. {slot.room}" if slot.room[:1].isdigit() else slot.room
             text = f"📚 Через {until} мин — {slot.subject}\n{slot.kind} · {place} · {slot.starts}"

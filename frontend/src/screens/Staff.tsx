@@ -5,13 +5,15 @@
  *  и есть главный аргумент продукта. */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Inbox, ScanLine, Send } from "lucide-react";
+import { Inbox, Lock, ScanLine, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { RequestCard } from "@/components/cards";
+import { DemoDeanButton } from "@/components/demo-dean";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
-import { CardSkeleton, Chip, Divider, Empty } from "@/components/ui/primitives";
+import { Card, CardSkeleton, Chip, Divider, Empty } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import type { CampusRequest, Me, TicketCheck } from "@/shared/types";
@@ -25,7 +27,50 @@ const FILTERS = [
   { key: "READY", label: "Готовы" },
 ];
 
-export default function Staff({ me }: { me: Me }) {
+export default function Staff({ me, onChange }: { me: Me; onChange: (me: Me) => void }) {
+  // Отдельные компоненты, а не ранний return: у стола деканата свои хуки,
+  // и при включении роли их число поменялось бы посреди жизни экрана
+  return me.staff ? <StaffDesk me={me} /> : <StaffLocked me={me} onChange={onChange} />;
+}
+
+/** Не сотрудник: вместо пустой очереди (сервер ответил бы 403) — что это за
+ *  раздел и как в него попасть. Демо-профилю — роль в один тап. */
+function StaffLocked({ me, onChange }: { me: Me; onChange: (me: Me) => void }) {
+  const navigate = useNavigate();
+  const demo = !!me.student?.is_demo;
+
+  return (
+    <div className="px-4 pb-28 safe-top">
+      <header className="scroll-fade mb-4 px-1">
+        <h1 className="mb-1">Деканат</h1>
+      </header>
+      <Card>
+        <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-raised text-muted">
+          <Lock size={20} />
+        </span>
+        <p className="mb-1 text-[17px] font-semibold text-ink">Раздел для сотрудников</p>
+        <p className="mb-5 text-[14px] leading-relaxed text-muted">
+          Здесь очередь заявок: сотрудник принимает заявку, передаёт на подпись и выдаёт
+          документ, а студент получает его файлом в чат.
+        </p>
+        {demo ? (
+          <>
+            <DemoDeanButton onDone={onChange} />
+            <p className="mt-3 text-center text-[12px] text-faint">
+              Демо: в очереди будут только ваши заявки
+            </p>
+          </>
+        ) : (
+          <Button full variant="soft" onClick={() => navigate("/profile")}>
+            Ввести служебный код в профиле
+          </Button>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function StaffDesk({ me }: { me: Me }) {
   const [items, setItems] = useState<CampusRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
@@ -54,6 +99,9 @@ export default function Staff({ me }: { me: Me }) {
         <p className="text-[14px] text-muted">
           {me.staff?.full_name} · {me.staff?.department}
         </p>
+        {me.student?.is_demo && (
+          <p className="mt-1 text-[12px] text-faint">Демо-роль: в очереди только ваши заявки</p>
+        )}
       </header>
 
       <TicketChecker />

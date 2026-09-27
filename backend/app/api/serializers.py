@@ -29,6 +29,7 @@ from app.db.models import (
     RequestTemplate,
     Student,
 )
+from app.modules.demo.service import is_demo
 
 
 def student_out(s: Student) -> StudentOut:
@@ -43,6 +44,7 @@ def student_out(s: Student) -> StudentOut:
         record_book_no=s.record_book_no,
         education_form=s.education_form,
         funding=s.funding,
+        is_demo=is_demo(s),
     )
 
 

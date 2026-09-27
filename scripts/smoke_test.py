@@ -4,7 +4,8 @@
 Проходит путь, который на защите показывают вживую:
 студент привязывается -> подаёт справку -> деканат принимает, подписывает
 и выдаёт -> студенту уходит PDF -> документ проверяется по QR.
-Плюс ассистент, календарь, возможности, матчинг и базовые проверки безопасности.
+Плюс ассистент, календарь, возможности, матчинг, базовые проверки безопасности
+и демо-вход экспертов: своя копия студента, роль деканата в один тап, своя очередь.
 
 Запуск:  python scripts/smoke_test.py [http://127.0.0.1:8000]
 """
@@ -27,6 +28,8 @@ BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000").rstrip("/
 STUDENT = "dev:900001:Anna"      # привяжем к коду A7K2-9M (Петрова Анна)
 CLERK = "dev:900002:Irina"       # сотрудник деканата
 HEAD = "dev:900003:Sergey"       # подписант
+DEMO_EXPERT_NAME = "Smoke Expert"
+DEMO_EXPERT = f"dev:900050:{DEMO_EXPERT_NAME}"  # демо-вход без кода, своя копия студента
 
 passed = 0
 failed = 0
@@ -375,6 +378,80 @@ except urllib.error.HTTPError as exc:
     status = exc.code
 check("вебхук с чужим секретом отклоняется (403)", status == 403,
       f"получили {status} — задан ли MAX_WEBHOOK_SECRET?")
+
+section("14. Демо-вход для экспертов")
+# Свой id и имя: копия называется по профилю MAX. Id фиксированный — повторный
+# прогон получает ту же копию, а reset_demo.sh её удаляет.
+status, dme = call("POST", "/api/binding/demo", DEMO_EXPERT)
+check("демо-вход без кода создаёт профиль", status == 200 and isinstance(dme, dict)
+      and bool(dme.get("is_bound")), f"{status} {str(dme)[:200]}")
+ds = (dme.get("student") or {}) if isinstance(dme, dict) else {}
+check("копия помечена как демо (зачётка DEMO-…)",
+      ds.get("is_demo") is True and str(ds.get("record_book_no", "")).startswith("DEMO-"), str(ds))
+check("ФИО копии — из профиля MAX", ds.get("full_name") == DEMO_EXPERT_NAME, str(ds.get("full_name")))
+if ds:
+    print(f"       {ds.get('full_name')} · {ds.get('group_name')} · зачётка {ds.get('record_book_no')}")
+
+status, again = call("POST", "/api/binding/demo", DEMO_EXPERT)
+check("повторный демо-вход возвращает ту же копию",
+      status == 200 and isinstance(again, dict) and ds.get("id") is not None
+      and (again.get("student") or {}).get("id") == ds.get("id"))
+
+status, dgrades = call("GET", "/api/grades", DEMO_EXPERT)
+check("баллы шаблона скопированы",
+      status == 200 and isinstance(dgrades, dict) and len(dgrades.get("subjects", [])) > 0, str(dgrades)[:160])
+
+status_demo, dgroup = call("GET", "/api/group", DEMO_EXPERT)
+status_real, rgroup = call("GET", "/api/group", STUDENT)
+check("копия — староста своей группы (экран опросов)",
+      status_demo == 200 and isinstance(dgroup, dict) and dgroup.get("is_head") and dgroup.get("demo"),
+      str(dgroup)[:200])
+if status_demo == 200 and status_real == 200:
+    check("демо-копии не раздувают счётчик группы",
+          dgroup["members"] == rgroup["members"] + 1,
+          f"у демо {dgroup['members']}, у студента {rgroup['members']}")
+    check("для группы староста — по-прежнему оригинал", not rgroup.get("demo") and bool(rgroup.get("head_name"))
+          and rgroup["head_name"] != DEMO_EXPERT_NAME, str(rgroup.get("head_name")))
+
+status, dreq = call(
+    "POST", "/api/requests", DEMO_EXPERT,
+    {"template_key": "study_certificate",
+     "payload": {"purpose": "По месту требования", "copies": 1, "need_original": False}},
+)
+check("демо-студент подаёт заявку", status in (200, 201), str(dreq)[:200])
+demo_no = dreq.get("public_no") if isinstance(dreq, dict) else None
+# Если справку выдаёт автомат, заявка сразу ISSUED — смотрим её среди выданных
+demo_auto = isinstance(dreq, dict) and dreq.get("status") == "ISSUED"
+
+status, res = call("POST", "/api/binding/demo-staff", STUDENT)
+check("роль деканата в один тап — только демо-профилю (403)", status == 403, f"получили {status}")
+
+status, dean = call("POST", "/api/binding/demo-staff", DEMO_EXPERT)
+check("роль деканата в один тап, без кода",
+      status == 200 and isinstance(dean, dict) and dean.get("role") == "STAFF_HEAD", str(dean)[:200])
+
+status, dqueue = call("GET", "/api/staff/requests" + ("?status=ISSUED" if demo_auto else ""), DEMO_EXPERT)
+check("в очереди демо-деканата своя заявка и только свои",
+      status == 200 and isinstance(dqueue, list) and any(r["public_no"] == demo_no for r in dqueue)
+      and all(r.get("student_name") == DEMO_EXPERT_NAME for r in dqueue),
+      str([(r["public_no"], r.get("student_name")) for r in dqueue])[:200] if isinstance(dqueue, list) else str(dqueue))
+
+if public_no:
+    status, res = call(
+        "POST", f"/api/staff/requests/{public_no}/transition", DEMO_EXPERT,
+        {"to_status": "IN_REVIEW", "comment": ""},
+    )
+    check("чужую заявку демо-деканат не видит (404)", status == 404, f"получили {status}")
+
+if demo_auto:
+    check("демо-студент получил справку", bool(dreq.get("document")), str(dreq)[:200])
+elif demo_no:
+    for to in ("IN_REVIEW", "SIGNING"):
+        status, res = call("POST", f"/api/staff/requests/{demo_no}/transition", DEMO_EXPERT,
+                           {"to_status": to, "comment": ""})
+    status, dissued = call("POST", f"/api/staff/requests/{demo_no}/issue", DEMO_EXPERT)
+    check("демо-деканат выдаёт свою справку",
+          status == 200 and isinstance(dissued, dict) and bool(dissued.get("document")), str(dissued)[:200])
 
 section("ИТОГ")
 print(f"  успешно: {passed}")

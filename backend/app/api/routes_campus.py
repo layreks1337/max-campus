@@ -15,7 +15,7 @@ import qrcode.image.svg
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.core.config import settings
 from app.core.dates import UNIVERSITY_TZ, local, when_full_ru
@@ -37,6 +37,7 @@ from app.db.models import (
     Student,
     utcnow,
 )
+from app.modules.demo.service import demo_filter, demo_student_ids, is_demo
 from app.modules.notify.service import enqueue
 
 log = logging.getLogger("api.campus")
@@ -564,6 +565,8 @@ class GroupOut(BaseModel):
     is_head: bool
     head_name: str
     polls: list[PollOut]
+    # Демо-профиль: опросы видит только автор, рассылки группе нет
+    demo: bool = False
 
 
 class PollIn(BaseModel):
@@ -577,15 +580,32 @@ class VoteIn(BaseModel):
 
 
 async def _head(session, group_name: str) -> Student | None:
+    """Настоящий староста группы. Демо-копии тоже старосты — эксперт должен
+    увидеть экран опросов, — но для остальных старостой остаётся оригинал."""
     res = await session.execute(
         select(Student).join(GroupHead, GroupHead.student_id == Student.id)
-        .where(GroupHead.group_name == group_name)
+        .where(GroupHead.group_name == group_name, ~demo_filter())
+        .limit(1)
     )
     return res.scalar_one_or_none()
 
 
+async def _is_head(session, st: Student) -> bool:
+    res = await session.execute(
+        select(GroupHead.id).where(GroupHead.student_id == st.id, GroupHead.group_name == st.group_name)
+    )
+    return res.first() is not None
+
+
 async def _poll_out(session, poll: GroupPoll, student_id: int) -> PollOut:
-    res = await session.execute(select(PollVote).where(PollVote.poll_id == poll.id))
+    # Голоса других демо-копий не считаем: полсотни экспертов в группе из трёх
+    # человек превратили бы опрос в бессмыслицу
+    res = await session.execute(
+        select(PollVote).where(
+            PollVote.poll_id == poll.id,
+            or_(PollVote.student_id == student_id, PollVote.student_id.not_in(demo_student_ids())),
+        )
+    )
     votes = list(res.scalars())
     counts = [0] * len(poll.options)
     mine = None
@@ -604,28 +624,39 @@ async def _poll_out(session, poll: GroupPoll, student_id: int) -> PollOut:
 @router.get("/group", response_model=GroupOut, summary="Моя группа и опросы")
 async def my_group(current: BoundUserDep, session: SessionDep) -> GroupOut:
     st = current.student
+    # Демо-копии в счётчик не входят — кроме самого смотрящего
     members = (await session.execute(
-        select(func.count(Student.id)).where(Student.group_name == st.group_name)
+        select(func.count(Student.id)).where(
+            Student.group_name == st.group_name, or_(~demo_filter(), Student.id == st.id)
+        )
     )).scalar() or 0
-    head = await _head(session, st.group_name)
+    is_head = await _is_head(session, st)
+    head = st if is_head else await _head(session, st.group_name)
+    # Опросы демо-копий видит только их автор
     res = await session.execute(
-        select(GroupPoll).where(GroupPoll.group_name == st.group_name)
+        select(GroupPoll).where(
+            GroupPoll.group_name == st.group_name,
+            or_(
+                GroupPoll.author_student_id == st.id,
+                GroupPoll.author_student_id.not_in(demo_student_ids()),
+            ),
+        )
         .order_by(GroupPoll.created_at.desc()).limit(10)
     )
     polls = [await _poll_out(session, p, st.id) for p in res.scalars()]
     return GroupOut(
         group_name=st.group_name, members=members,
-        is_head=head is not None and head.id == st.id,
+        is_head=is_head,
         head_name=head.short_name if head else "",
         polls=polls,
+        demo=is_demo(st),
     )
 
 
 @router.post("/group/polls", response_model=PollOut, status_code=201, summary="Опрос для группы")
 async def create_poll(body: PollIn, current: BoundUserDep, session: SessionDep) -> PollOut:
     st = current.student
-    head = await _head(session, st.group_name)
-    if head is None or head.id != st.id:
+    if not await _is_head(session, st):
         raise HTTPException(403, detail={"code": "FORBIDDEN", "message": "Опросы создаёт староста группы"})
     options = [o.strip() for o in body.options if o.strip()]
     if len(options) < 2:
@@ -637,14 +668,19 @@ async def create_poll(body: PollIn, current: BoundUserDep, session: SessionDep) 
     session.add(poll)
     await session.flush()
 
-    # Одногруппникам — сообщение от бота с кнопкой в приложение
-    res = await session.execute(
-        select(AppUser.max_user_id)
-        .join(Binding, Binding.app_user_id == AppUser.id)
-        .join(Student, Student.id == Binding.student_id)
-        .where(Student.group_name == st.group_name, Student.id != st.id)
-    )
-    for (max_user_id,) in res.all():
+    # Одногруппникам — сообщение от бота с кнопкой в приложение. Демо-копии
+    # не получают ничего, а опрос демо-старосты не уходит никому: его видит
+    # только автор, и один эксперт не заспамит остальных в MAX.
+    recipients = []
+    if not is_demo(st):
+        res = await session.execute(
+            select(AppUser.max_user_id)
+            .join(Binding, Binding.app_user_id == AppUser.id)
+            .join(Student, Student.id == Binding.student_id)
+            .where(Student.group_name == st.group_name, Student.id != st.id, ~demo_filter())
+        )
+        recipients = [row[0] for row in res.all()]
+    for max_user_id in recipients:
         await enqueue(
             session, max_user_id=max_user_id, kind="group_poll",
             text=f"🗳 Староста {st.short_name} спрашивает группу {st.group_name}:\n\n{poll.question}",

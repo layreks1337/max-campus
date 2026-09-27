@@ -55,7 +55,9 @@ export default function Group() {
             <div className="min-w-0 flex-1">
               <p className="text-[16px] font-semibold text-ink">Вы староста</p>
               <p className="text-[13px] leading-snug text-muted">
-                Опрос уйдёт всей группе сообщением от бота — отвечать можно в один тап.
+                {data.demo
+                  ? "Демо-профиль: опрос увидите только вы, группе бот его не рассылает."
+                  : "Опрос уйдёт всей группе сообщением от бота — отвечать можно в один тап."}
               </p>
             </div>
           </div>
@@ -81,7 +83,7 @@ export default function Group() {
         onCreated={(p) => {
           setData((d) => (d ? { ...d, polls: [p, ...d.polls] } : d));
           setCreating(false);
-          toast.ok("Опрос отправлен группе");
+          toast.ok(data?.demo ? "Опрос создан — демо, без рассылки группе" : "Опрос отправлен группе");
         }}
       />
     </div>

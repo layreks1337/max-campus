@@ -1,5 +1,9 @@
 /** Привязка студенческого. Единственный экран до входа в приложение:
- *  без связи «аккаунт MAX ↔ студент вуза» справку выдавать некому. */
+ *  без связи «аккаунт MAX ↔ студент вуза» справку выдавать некому.
+ *
+ *  Главный путь для экспертов — демо-вход: своя копия синтетического студента,
+ *  которая не кончается, в отличие от четырёх одноразовых кодов (решение 055).
+ *  Код из деканата — второй путь, так входил бы настоящий студент. */
 
 
 import { CalendarDays, FileText, MessageCircle, Users } from "lucide-react";
@@ -16,11 +20,32 @@ const FEATURES = [
   { icon: MessageCircle, text: "Ассистент, который знает регламенты" },
 ];
 
-export default function Onboarding({ onBound }: { onBound: (me: Me) => void }) {
+export default function Onboarding({
+  onBound,
+  demo = true,
+}: {
+  onBound: (me: Me) => void;
+  /** Демо-вход включён на сервере (DEMO_MODE) */
+  demo?: boolean;
+}) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demoError, setDemoError] = useState("");
+  const [demoLoading, setDemoLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+
+  const tryDemo = async () => {
+    setDemoLoading(true);
+    setDemoError("");
+    try {
+      onBound(await api.bindDemo());
+    } catch (e) {
+      setDemoError(e instanceof ApiException ? e.message : "Не удалось открыть демо");
+    } finally {
+      setDemoLoading(false);
+    }
+  };
 
   const submit = async () => {
     const clean = code.trim().toUpperCase();
@@ -69,6 +94,24 @@ export default function Onboarding({ onBound }: { onBound: (me: Me) => void }) {
       </div>
 
       <div className="mt-auto">
+        {demo && (
+          <>
+            <Button full size="lg" loading={demoLoading} onClick={tryDemo}>
+              Попробовать как студент (демо)
+            </Button>
+            <p className="mt-2 text-center text-[13px] text-faint">
+              синтетические данные для экспертов
+            </p>
+            {demoError && (
+              <p className="mt-2 text-center text-[13px] text-danger">{demoError}</p>
+            )}
+            <div className="mt-7 mb-4 flex items-center gap-3 text-[12px] text-faint">
+              <span aria-hidden className="h-px flex-1 bg-hairline" />
+              или по коду из деканата
+              <span aria-hidden className="h-px flex-1 bg-hairline" />
+            </div>
+          </>
+        )}
         <label className="mb-2 block text-[13px] font-semibold text-muted">
           Код студента
         </label>
@@ -89,8 +132,15 @@ export default function Onboarding({ onBound }: { onBound: (me: Me) => void }) {
         />
         {error && <p className="mb-2 text-center text-[13px] text-danger">{error}</p>}
 
-        <Button full size="lg" loading={loading} onClick={submit} className="mt-2">
-          Войти
+        <Button
+          full
+          size="lg"
+          variant={demo ? "soft" : "primary"}
+          loading={loading}
+          onClick={submit}
+          className="mt-2"
+        >
+          {demo ? "Войти по коду" : "Войти"}
         </Button>
 
         <button
@@ -109,6 +159,12 @@ export default function Onboarding({ onBound }: { onBound: (me: Me) => void }) {
         <p className="mb-5 text-[15px] leading-relaxed text-muted">
           Если код потерялся — подойдите в деканат или напишите старосте, у него есть список.
         </p>
+        {demo && (
+          <p className="mb-5 text-[15px] leading-relaxed text-muted">
+            Чтобы просто посмотреть приложение, кода не нужно: кнопка «Попробовать как
+            студент» создаёт вам личный демо-профиль с синтетическими данными.
+          </p>
+        )}
         <div className="rounded-[16px] bg-field p-4">
           <p className="mb-2 text-[13px] font-semibold text-muted">Демонстрационные коды</p>
           <p className="font-mono text-[15px] leading-relaxed text-ink">

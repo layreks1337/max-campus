@@ -16,6 +16,8 @@ export interface Student {
   record_book_no: string;
   education_form: string;
   funding: string;
+  /** Демо-копия для экспертов (зачётка DEMO-…): синтетический профиль */
+  is_demo?: boolean;
 }
 
 export interface Staff {
@@ -33,7 +35,7 @@ export interface Me {
   role: string;
   student: Student | null;
   staff: Staff | null;
-  features: { assistant?: boolean; bot?: boolean };
+  features: { assistant?: boolean; bot?: boolean; demo?: boolean };
 }
 
 export type FieldType =
@@ -373,4 +375,6 @@ export interface Group {
   is_head: boolean;
   head_name: string;
   polls: Poll[];
+  /** Демо-профиль: опросы видит только автор, рассылки группе нет */
+  demo?: boolean;
 }

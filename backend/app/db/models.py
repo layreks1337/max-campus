@@ -65,6 +65,9 @@ class Student(Base):
 
     @property
     def short_name(self) -> str:
+        # Демо-копия без фамилии в профиле MAX: «Даниил», а не «Д.»
+        if not self.last_name:
+            return self.first_name
         initials = "".join(f"{p[0]}." for p in (self.first_name, self.middle_name) if p)
         return f"{self.last_name} {initials}".strip()
 

@@ -5,6 +5,7 @@ import { Briefcase, Moon, Sun, UserCog } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { shortFaculty } from "@/components/cards";
+import { DemoDeanButton } from "@/components/demo-dean";
 import { Button } from "@/components/ui/button";
 import { Card, Chip, Divider } from "@/components/ui/primitives";
 import { Sheet } from "@/components/ui/sheet";
@@ -74,6 +75,17 @@ export default function Profile({
         </Card>
       )}
 
+      {s?.is_demo && !me.staff && (
+        <Card className="mb-4">
+          <p className="mb-1 text-[15px] font-semibold text-ink">Демо-профиль для экспертов</p>
+          <p className="mb-4 text-[13px] leading-snug text-muted">
+            Данные синтетические. Включите роль деканата, чтобы самому принять свою заявку
+            и выдать справку: она появится в заявке, а в MAX придёт ещё и файлом в чат.
+          </p>
+          <DemoDeanButton onDone={onChange} />
+        </Card>
+      )}
+
       {me.staff && (
         <Card className="mb-4">
           <div className="flex items-center gap-3">
@@ -112,7 +124,8 @@ export default function Profile({
           </span>
         </button>
 
-        {!me.staff && (
+        {/* Демо-профилю код не нужен — у него кнопка роли деканата выше */}
+        {!me.staff && !s?.is_demo && (
           <>
             <Divider className="my-4" />
             <button

@@ -31,6 +31,7 @@ from app.db.models import (
     RequestTemplate,
     utcnow,
 )
+from app.modules.demo.service import is_demo
 from app.modules.notify.service import enqueue
 from app.modules.requests import engine, pdf
 
@@ -205,6 +206,17 @@ async def answer_info(
 # ── Деканат ───────────────────────────────────────────────────────
 
 
+def _staff_scope(stmt, current):
+    """Демо-профиль в роли деканата видит только заявки своей копии.
+
+    Копии названы по профилям MAX: общая очередь показала бы одному эксперту
+    имена и заявки остальных. Заодно эксперт сразу находит свою заявку.
+    """
+    if is_demo(current.student):
+        return stmt.where(Request.student_id == current.student.id)
+    return stmt
+
+
 @staff_router.get("", response_model=list[RequestOut], summary="Очередь заявок")
 async def staff_queue(
     current: StaffUserDep,
@@ -212,7 +224,7 @@ async def staff_queue(
     status_filter: str | None = Query(None, alias="status"),
     overdue: bool = Query(False, description="Только просроченные"),
 ) -> list[RequestOut]:
-    stmt = select(Request)
+    stmt = _staff_scope(select(Request), current)
     if status_filter:
         stmt = stmt.where(Request.status == status_filter)
     else:
@@ -232,7 +244,7 @@ async def staff_transition(
     public_no: str, body: TransitionIn, current: StaffUserDep, session: SessionDep
 ) -> RequestOut:
     res = await session.execute(
-        _load_full(select(Request).where(Request.public_no == public_no))
+        _load_full(_staff_scope(select(Request).where(Request.public_no == public_no), current))
     )
     req = res.unique().scalar_one_or_none()
     if req is None:
@@ -281,7 +293,7 @@ async def staff_issue(
     public_no: str, current: StaffUserDep, session: SessionDep
 ) -> RequestOut:
     res = await session.execute(
-        _load_full(select(Request).where(Request.public_no == public_no))
+        _load_full(_staff_scope(select(Request).where(Request.public_no == public_no), current))
     )
     req = res.unique().scalar_one_or_none()
     if req is None:

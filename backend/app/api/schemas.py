@@ -39,6 +39,8 @@ class StudentOut(BaseModel):
     record_book_no: str
     education_form: str
     funding: str
+    # Демо-копия для экспертов (зачётка DEMO-…): синтетический профиль
+    is_demo: bool = False
 
 
 class StaffOut(BaseModel):

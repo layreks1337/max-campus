@@ -129,7 +129,9 @@ export default function App() {
     );
   }
 
-  if (!me?.is_bound) return <Onboarding onBound={setMe} />;
+  if (!me?.is_bound) {
+    return <Onboarding onBound={setMe} demo={me?.features?.demo !== false} />;
+  }
 
   return (
     <div className="min-h-dvh">
@@ -145,7 +147,7 @@ export default function App() {
           <Route path="/requests/:no" element={<RequestDetail />} />
           <Route path="/people" element={<People />} />
           <Route path="/chat" element={<Chat me={me} />} />
-          <Route path="/staff" element={<Staff me={me} />} />
+          <Route path="/staff" element={<Staff me={me} onChange={setMe} />} />
           <Route path="/profile" element={<Profile me={me} onChange={setMe} />} />
           <Route path="/schedule" element={<Schedule />} />
           <Route path="/grades" element={<Grades />} />

@@ -11,6 +11,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api import serializers
@@ -21,7 +23,7 @@ from app.api.schemas import (
     StaffOut,
 )
 from app.core.config import settings
-from app.core.deps import BoundUserDep, CurrentUserDep, SessionDep
+from app.core.deps import BoundUserDep, CurrentUser, CurrentUserDep, SessionDep
 from app.db.models import (
     ACTIVE_STATUSES,
     MOD_APPROVED,
@@ -39,6 +41,7 @@ from app.db.models import (
     Swipe,
     utcnow,
 )
+from app.modules.demo import service as demo
 from app.modules.feed.scoring import score_opportunity
 from app.modules.match.service import audience_matches
 
@@ -71,6 +74,7 @@ async def get_me(current: CurrentUserDep) -> MeOut:
         features={
             "assistant": settings.llm_enabled,
             "bot": settings.bot_enabled,
+            "demo": settings.DEMO_MODE,
         },
     )
 
@@ -126,7 +130,6 @@ async def claim_staff(body: BindRequest, current: CurrentUserDep, session: Sessi
     Демонстрационный механизм: коды сотрудников заданы в сиде. В реальном
     внедрении роль приезжает из кадровой системы вуза.
     """
-    from app.db.models import Staff
     from app.seed import STAFF_CODES
 
     if current.staff is not None:
@@ -138,6 +141,13 @@ async def claim_staff(body: BindRequest, current: CurrentUserDep, session: Sessi
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "BAD_CODE", "message": "Код сотрудника не распознан"},
         )
+    return await _grant_staff(current, session, entry)
+
+
+async def _grant_staff(
+    current: CurrentUser, session: AsyncSession, entry: tuple[str, str, str, str]
+) -> MeOut:
+    from app.db.models import Staff
 
     full_name, department, role, position = entry
     staff = Staff(
@@ -152,6 +162,92 @@ async def claim_staff(body: BindRequest, current: CurrentUserDep, session: Sessi
     current.staff = staff
     log.info("Активирована роль %s для пользователя %s", role, current.app_user.max_user_id)
     return await get_me(current)
+
+
+# ── Демо-вход для экспертов (решение 055) ─────────────────────────
+
+
+def _require_demo_mode() -> None:
+    if not settings.DEMO_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "DEMO_DISABLED", "message": "Демо-вход на этом сервере выключен"},
+        )
+
+
+@router.post("/binding/demo", response_model=MeOut, summary="Демо-вход: своя копия демо-студента")
+async def claim_demo(current: CurrentUserDep, session: SessionDep) -> MeOut:
+    """Вход без кода привязки: аккаунт получает свою копию демо-студента.
+
+    Копия одна на аккаунт и не кончается: уже привязанный аккаунт (копией или
+    кодом) просто получает свой профиль. ФИО — из профиля MAX, остальное —
+    синтетика шаблона. Работает при DEMO_MODE=true.
+    """
+    _require_demo_mode()
+    if current.is_bound:
+        return await get_me(current)
+
+    if not demo.take_slot():
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "RATE_LIMITED",
+                "message": "Демо-вход сейчас перегружен. Попробуйте через несколько минут.",
+            },
+        )
+
+    try:
+        # Точка сохранения: двойное нажатие даёт два параллельных запроса,
+        # и второй упирается в уникальность зачётки DEMO-<id>
+        async with session.begin_nested():
+            student = await demo.create_copy(session, current.app_user, current.init.user)
+        log.info(
+            "Демо-копия %s для пользователя %s",
+            student.record_book_no, current.app_user.max_user_id,
+        )
+    except demo.DemoUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "DEMO_UNAVAILABLE", "message": str(exc)},
+        ) from exc
+    except IntegrityError:
+        res = await session.execute(
+            select(Student).join(Binding, Binding.student_id == Student.id)
+            .where(Binding.app_user_id == current.app_user.id)
+        )
+        student = res.scalar_one_or_none()
+        if student is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "CONFLICT", "message": "Не удалось создать демо-профиль, повторите"},
+            ) from None
+
+    current.student = student
+    return await get_me(current)
+
+
+@router.post(
+    "/binding/demo-staff", response_model=MeOut, summary="Демо: роль деканата в один тап"
+)
+async def claim_demo_staff(current: CurrentUserDep, session: SessionDep) -> MeOut:
+    """Роль сотрудника, который может выдавать документы (как по коду STAFF-002),
+    без ввода кода. Только для аккаунта с демо-копией: эксперт сам проводит свою
+    заявку до PDF. Очередь такого сотрудника — только заявки его копии."""
+    from app.seed import STAFF_CODES
+
+    _require_demo_mode()
+    if current.staff is not None:
+        return await get_me(current)
+    if not demo.is_demo(current.student):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "FORBIDDEN",
+                "message": "Роль в один тап — только для демо-профиля. "
+                           "Сотрудники входят по служебному коду.",
+            },
+        )
+    return await _grant_staff(current, session, STAFF_CODES[demo.DEMO_STAFF_CODE])
 
 
 @router.post("/uploads", summary="Загрузить файл для поля формы")

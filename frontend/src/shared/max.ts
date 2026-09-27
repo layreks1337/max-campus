@@ -65,22 +65,48 @@ export const isTestUserId = (id: number): boolean =>
 export const isInsideMax = (): boolean =>
   typeof window !== "undefined" && !!window.WebApp?.initData;
 
-/** Кем представляемся в режиме разработки. Меняется в профиле. */
+/** Случайные id для браузеров начинаются выше фиксированных тестовых
+ *  (900001–900999: смоук-тест и быстрые кнопки в профиле). */
+const RANDOM_DEV_ID_MIN = 901_000;
+
+/** Имя по умолчанию. Бэкенд считает его заглушкой и называет демо-копию
+ *  как шаблонного студента, а не «Dev». */
+const DEFAULT_DEV_NAME = "Dev";
+
+let sessionDevUser: { id: number; name: string } | null = null;
+
+/** Кем представляемся в режиме разработки. Меняется в профиле.
+ *
+ *  Каждому браузеру — свой случайный тестовый id, запомненный в localStorage.
+ *  Раньше все открывшие ссылку вне MAX были одним пользователем 900001
+ *  и видели заявки друг друга. */
 export function getDevUser(): { id: number; name: string } {
   try {
     const raw = localStorage.getItem(DEV_USER_KEY);
     if (raw) {
       const saved = JSON.parse(raw);
       // id вне тестового диапазона (сохранён до ограничения) бэкенд не пустит —
-      // вместо вечного 401 возвращаемся к пользователю по умолчанию
+      // вместо вечного 401 выдаём новый случайный
       if (isTestUserId(Number(saved?.id))) {
-        return { id: Number(saved.id), name: String(saved.name ?? "Dev") };
+        return { id: Number(saved.id), name: String(saved.name ?? DEFAULT_DEV_NAME) };
       }
     }
   } catch {
     /* поломанный localStorage — не повод падать */
   }
-  return { id: 900001, name: "Anna" };
+  // Держим в памяти: без localStorage (приватный режим) каждый запрос
+  // иначе уходил бы от нового пользователя
+  if (!sessionDevUser) {
+    const id =
+      RANDOM_DEV_ID_MIN + Math.floor(Math.random() * (TEST_USER_ID_MAX - RANDOM_DEV_ID_MIN + 1));
+    sessionDevUser = { id, name: DEFAULT_DEV_NAME };
+    try {
+      setDevUser(id, DEFAULT_DEV_NAME);
+    } catch {
+      /* останется новым на каждой загрузке страницы — лучше, чем падение */
+    }
+  }
+  return sessionDevUser;
 }
 
 export function setDevUser(id: number, name: string): void {

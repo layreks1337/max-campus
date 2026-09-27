@@ -136,6 +136,9 @@ export const api = {
   me: () => get<Me>("/me"),
   bind: (code: string) => post<Me>("/binding/claim", { code }),
   bindStaff: (code: string) => post<Me>("/binding/staff", { code }),
+  // Демо для экспертов: своя копия демо-студента и роль деканата в один тап
+  bindDemo: () => post<Me>("/binding/demo"),
+  bindDemoStaff: () => post<Me>("/binding/demo-staff"),
   home: () => get<Home>("/home"),
 
   upload: async (file: File) => {
