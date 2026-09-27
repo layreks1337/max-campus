@@ -16,6 +16,7 @@ search_regulations здесь СОЗНАТЕЛЬНО отсутствует: п�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -39,8 +40,13 @@ from app.db.models import (
     Student,
     utcnow,
 )
+from app.db.session import SessionLocal
 
 log = logging.getLogger("assistant.tools")
+
+# Ссылки на фоновые записи: без них задачу, чьего ожидающего отменил таймаут,
+# может подобрать сборщик мусора посреди записи
+_background: set[asyncio.Task] = set()
 
 
 @dataclass
@@ -54,6 +60,10 @@ class ToolContext:
     # Предзапрос часто достаёт то же, что потом просит модель, — второй поход
     # в базу за тем же самым не нужен.
     cache: dict[str, str] = field(default_factory=dict)
+    # Обращения в деканат, созданные за этот вопрос (номера), и задачи их записи:
+    # по таймауту сервис дожидается записи, чтобы назвать студенту номер
+    escalations: list[str] = field(default_factory=list)
+    writes: list[asyncio.Task] = field(default_factory=list)
 
     def add_action(self, action: dict) -> None:
         if action not in self.ui_actions:
@@ -243,6 +253,19 @@ PREFETCH_RULES: list[tuple[tuple[str, ...], str, str]] = [
         "Отклики и напарники этого студента",
     ),
 ]
+
+
+# Инструменты, которые читают собственные данные студента, а не справочники
+OWN_DATA_TOOLS = ("get_my_requests", "get_my_matches")
+
+
+def asks_own_data(question: str) -> bool:
+    """Вопрос про свои заявки или отклики — ответ в данных студента, не в регламенте."""
+    low = question.lower()
+    return any(
+        tool_name in OWN_DATA_TOOLS and any(kw in low for kw in keywords)
+        for keywords, tool_name, _ in PREFETCH_RULES
+    )
 
 
 async def prefetch(ctx: ToolContext, question: str) -> list[tuple[str, str]]:
@@ -485,8 +508,6 @@ async def _get_my_matches(ctx: ToolContext) -> str:
 
 
 async def _escalate_to_human(ctx: ToolContext, question: str) -> str:
-    from app.modules.requests.engine import create_request
-
     # Защита от преждевременной эскалации: модель склонна дёргать этот инструмент
     # первым, и тогда вместо ответа про собственную заявку студент получает
     # обращение в деканат. Если по формулировке видно подходящий инструмент,
@@ -505,28 +526,60 @@ async def _escalate_to_human(ctx: ToolContext, question: str) -> str:
                     ensure_ascii=False,
                 )
 
-    tpl = await ctx.session.get(RequestTemplate, "support_question")
-    if tpl is None:
-        return json.dumps({"error": "Канал обращений недоступен"}, ensure_ascii=False)
+    # Обращение пишется в своей сессии и коммитится сразу (решение 061). Ответ
+    # ассистента ограничен по времени, и по таймауту его транзакция откатывается —
+    # обращение пропало бы вместе с ней, а кнопка к нему осталась бы в ответе.
+    # shield: отмена по таймауту не обрывает запись посередине, сервис её дождётся.
+    task = asyncio.ensure_future(_write_escalation(ctx, ctx.student.id, question))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    ctx.writes.append(task)
 
-    req = await create_request(
-        ctx.session,
-        template=tpl,
-        student=ctx.student,
-        payload={"question": question[:1000], "source": "Ассистент"},
-    )
-    ctx.add_action(
-        {"type": "open_request", "label": f"Обращение №{req.public_no}",
-         "request_no": req.public_no}
-    )
+    public_no = await asyncio.shield(task)
+    if public_no is None:
+        return json.dumps({"error": "Канал обращений недоступен"}, ensure_ascii=False)
     return json.dumps(
         {
             "ok": True,
-            "number": req.public_no,
+            "number": public_no,
             "note": "Вопрос передан в деканат. Ответ придёт в чат MAX.",
         },
         ensure_ascii=False,
     )
+
+
+async def _write_escalation(ctx: ToolContext, student_id: int, question: str) -> str | None:
+    """Создаёт обращение и коммитит его. Номер — или None, если записать не вышло.
+
+    student_id передаётся числом: к этому моменту основная сессия могла уже
+    откатиться по таймауту, и чтение атрибута ctx.student полезло бы в неё.
+    """
+    from app.modules.requests.engine import create_request
+
+    try:
+        async with SessionLocal() as session:
+            tpl = await session.get(RequestTemplate, "support_question")
+            student = await session.get(Student, student_id)
+            if tpl is None or student is None:
+                return None
+            req = await create_request(
+                session,
+                template=tpl,
+                student=student,
+                payload={"question": question[:1000], "source": "Ассистент"},
+            )
+            await session.commit()
+    except Exception:
+        log.exception("Не удалось создать обращение в деканат")
+        return None
+
+    # Кнопка — только когда обращение уже в базе
+    ctx.escalations.append(req.public_no)
+    ctx.add_action(
+        {"type": "open_request", "label": f"Обращение №{req.public_no}",
+         "request_no": req.public_no}
+    )
+    return req.public_no
 
 
 HANDLERS = {

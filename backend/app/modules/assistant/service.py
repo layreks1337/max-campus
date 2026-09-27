@@ -1,6 +1,6 @@
 """Оркестрация ассистента: принудительный RAG + цикл вызова инструментов.
 
-Ответ ограничен по времени и по частоте (решение 060): не дольше
+Ответ ограничен по времени и по частоте (решения 060, 061): не дольше
 ASSISTANT_TIMEOUT_SECONDS, не больше ASSISTANT_RATE_LIMIT вопросов за окно.
 Если модель не уложилась или упала, человек получает не ошибку, а выдержки
 из найденных регламентов с честной пометкой, что модель не ответила.
@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -41,7 +42,8 @@ MONTHS = [
 FALLBACK_NOTE = "Модель не ответила — вот что сказано в регламенте."
 FALLBACK_FRAGMENTS = 2
 FALLBACK_EXCERPT_CHARS = 420
-# Полнотекстовый поиск для запасного ответа — только база, но и её не ждём вечно
+# Что добирается для запасного ответа после таймаута (запись обращения, поиск,
+# данные студента) — только база, но и её не ждём вечно
 FALLBACK_SEARCH_SECONDS = 5.0
 
 
@@ -58,8 +60,12 @@ class _Progress:
     """Что успело собраться до таймаута — из этого строится запасной ответ."""
 
     fragments: list[rag.Fragment] | None = None
+    prefetched: bool = False
     actions: list[dict] = field(default_factory=list)
     trace: list[str] = field(default_factory=list)
+    # Обращения в деканат (номера) и задачи их записи — см. tools._escalate_to_human
+    escalations: list[str] = field(default_factory=list)
+    writes: list[asyncio.Task] = field(default_factory=list)
 
 
 # ── Лимит вопросов ────────────────────────────────────────────────
@@ -199,6 +205,15 @@ async def _load_history(session: AsyncSession, conversation_id: int) -> list[dic
     return [{"role": m.role, "content": m.content} for m in rows if m.content]
 
 
+# Ответы, которые готовятся прямо сейчас: (пользователь, вопрос) → будущий ответ.
+# «Повторить» в чате бросает ожидание и шлёт тот же вопрос заново, а первый
+# запрос на сервере при этом продолжает работать (отключение клиента его не
+# прерывает). Повтор присоединяется к нему (решение 061): без второго вызова
+# модели, без дубля вопроса в истории и без траты лимита, а запасной ответ
+# приходит в свой срок — через 25 секунд от первого запроса, а не от повтора.
+_pending: dict[tuple[int, str], asyncio.Future] = {}
+
+
 async def ask(
     session: AsyncSession,
     *,
@@ -209,8 +224,40 @@ async def ask(
     """Основной вход. RAG выполняется всегда, до обращения к модели.
 
     Поднимает RateLimited, если пользователь исчерпал лимит вопросов, — вопрос
-    тогда не сохраняется и в модель не уходит.
+    тогда не сохраняется и в модель не уходит. Тот же вопрос, пока на него
+    готовится ответ, не задаётся заново, а получает этот ответ (_pending).
     """
+    key = (app_user_id, question)
+    running = _pending.get(key)
+    if running is not None:
+        log.info("Тот же вопрос ещё в работе — ждём его ответ, а не спрашиваем заново")
+        joined = await asyncio.shield(running)
+        if joined is not None:
+            return joined
+        # Первый запрос упал — отвечаем сами, как на новый вопрос
+
+    done: asyncio.Future = asyncio.get_running_loop().create_future()
+    _pending[key] = done
+    answer: AssistantAnswer | None = None
+    try:
+        answer = await _ask(
+            session, student=student, app_user_id=app_user_id, question=question
+        )
+        return answer
+    finally:
+        # None — ответа нет (ошибка, лимит): присоединившийся ответит сам
+        done.set_result(answer)
+        if _pending.get(key) is done:
+            del _pending[key]
+
+
+async def _ask(
+    session: AsyncSession,
+    *,
+    student: Student,
+    app_user_id: int,
+    question: str,
+) -> AssistantAnswer:
     check_rate(app_user_id)
 
     conv = await _get_or_create_conversation(session, app_user_id)
@@ -252,28 +299,38 @@ async def ask(
             settings.ASSISTANT_TIMEOUT_SECONDS,
         )
         # Отмена могла прервать запрос к базе посреди выполнения, и соединение
-        # осталось в неизвестном состоянии. Всё, что успело выполниться, — чтение
-        # (инструменты ничего не пишут), поэтому откат ничего не теряет.
+        # осталось в неизвестном состоянии — откатываем. Терять при этом нечего:
+        # вопрос уже закоммичен, инструменты данных только читают, а единственный
+        # пишущий — обращение в деканат — пишется в своей сессии и коммитится
+        # сразу (решение 061).
         await session.rollback()
-        if progress.fragments is None:
-            progress.fragments = await _fallback_search(session, question)
+        await _fallback_collect(session, student, app_user_id, question, progress)
         answer = _fallback(progress, question)
 
-    session.add(
-        AiMessage(
-            conversation_id=conv_id,
-            role="assistant",
-            content=answer.text,
-            sources_json=answer.sources,
-            tool_calls_json=answer.tool_trace,
-        )
-    )
-    # Через UPDATE, а не атрибутом: после отката объект просрочен, и чтение
-    # атрибута полезло бы в базу вне async-контекста (MissingGreenlet)
-    await session.execute(
-        update(Conversation).where(Conversation.id == conv_id).values(last_message_at=utcnow())
-    )
-    await session.flush()
+    # Диалог могли очистить, пока готовился ответ (кнопка в шапке чата): тогда
+    # сохранять ответ некуда — вставка упадёт на внешнем ключе. Ответ всё равно
+    # отдаём, а сбой ограничиваем точкой сохранения, чтобы не уронить запрос.
+    try:
+        async with session.begin_nested():
+            session.add(
+                AiMessage(
+                    conversation_id=conv_id,
+                    role="assistant",
+                    content=answer.text,
+                    sources_json=answer.sources,
+                    tool_calls_json=answer.tool_trace,
+                )
+            )
+            # Через UPDATE, а не атрибутом: после отката объект просрочен, и чтение
+            # атрибута полезло бы в базу вне async-контекста (MissingGreenlet)
+            await session.execute(
+                update(Conversation)
+                .where(Conversation.id == conv_id)
+                .values(last_message_at=utcnow())
+            )
+            await session.flush()
+    except IntegrityError:
+        log.info("Диалог очищен, пока готовился ответ, — ответ не сохраняем")
     return answer
 
 
@@ -295,16 +352,15 @@ async def _answer(
         {"title": f.title, "url": f.source_url, "snippet": f.text[:220]} for f in fragments
     ]
 
-    # Кнопки копятся прямо в progress: если модель не успеет, они всё равно
-    # попадут в запасной ответ — например, «Открыть заявку» из предзапроса.
-    ctx = ToolContext(
-        session=session, student=student, app_user_id=app_user_id, ui_actions=progress.actions
-    )
+    # Кнопки и обращения копятся прямо в progress: если модель не успеет, они всё
+    # равно попадут в запасной ответ — например, «Открыть заявку» из предзапроса.
+    ctx = _tool_context(session, student, app_user_id, progress)
 
     # ── Шаг 2: предзапрос очевидно нужных данных (решение 030) ──
     # Модель не всегда вызывает инструмент и тогда может выдумать список
     # мероприятий. Подтягиваем данные сами, чтобы выдумывать было нечего.
     data_blocks = await tools_mod.prefetch(ctx, question)
+    progress.prefetched = True
 
     system_prompt = build_system_prompt(student, fragments_text, _today_ru(), data_blocks)
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
@@ -384,20 +440,60 @@ async def _answer(
 # ── Запасной ответ: модель не ответила ────────────────────────────
 
 
-async def _fallback_search(session: AsyncSession, question: str) -> list[rag.Fragment]:
-    """Поиск для запасного ответа, если таймаут наступил раньше основного.
+def _tool_context(
+    session: AsyncSession, student: Student, app_user_id: int, progress: _Progress
+) -> ToolContext:
+    """Контекст инструментов, который складывает кнопки и обращения в progress."""
+    return ToolContext(
+        session=session,
+        student=student,
+        app_user_id=app_user_id,
+        ui_actions=progress.actions,
+        escalations=progress.escalations,
+        writes=progress.writes,
+    )
 
-    Обычно так бывает, когда Yandex не отдаёт эмбеддинг вопроса, поэтому
-    здесь только полнотекст по своей базе.
+
+async def _fallback_collect(
+    session: AsyncSession,
+    student: Student,
+    app_user_id: int,
+    question: str,
+    progress: _Progress,
+) -> None:
+    """Добирает после таймаута то, что нужно запасному ответу. Не дольше
+    FALLBACK_SEARCH_SECONDS на всё:
+
+    - запись обращения в деканат, которую таймаут не прервал (shield), — чтобы
+      назвать номер, а не промолчать о нём;
+    - поиск, если таймаут наступил раньше него. Обычно так бывает, когда Yandex
+      не отдаёт эмбеддинг вопроса, поэтому здесь только полнотекст по своей базе;
+    - предзапрос данных студента, если до него не дошло, — кнопки «Заявка №…»
+      к вопросу про свою заявку.
     """
+
+    async def collect() -> None:
+        if progress.writes:
+            await asyncio.wait(progress.writes)
+        if progress.fragments is None:
+            progress.fragments = await rag.search(session, question, vector=False)
+        if not progress.prefetched:
+            # После отката студент просрочен — перечитываем, иначе инструменты
+            # полезли бы за его полями в базу вне async-контекста
+            await session.refresh(student)
+            ctx = _tool_context(session, student, app_user_id, progress)
+            await tools_mod.prefetch(ctx, question)
+            progress.prefetched = True
+            progress.trace.extend(ctx.called)
+
     try:
-        return await asyncio.wait_for(
-            rag.search(session, question, vector=False), timeout=FALLBACK_SEARCH_SECONDS
-        )
+        await asyncio.wait_for(collect(), timeout=FALLBACK_SEARCH_SECONDS)
     except Exception:
-        log.exception("Запасной поиск по регламентам не удался")
+        log.exception("Запасной ответ собран не полностью")
+        # Отмена снова могла оборвать запрос к базе — ответ сохраняется следом
         await session.rollback()
-        return []
+    if progress.fragments is None:
+        progress.fragments = []
 
 
 def _excerpt(text: str, limit: int = FALLBACK_EXCERPT_CHARS) -> str:
@@ -451,44 +547,44 @@ def _fallback(progress: _Progress, question: str) -> AssistantAnswer:
     «какая погода», поэтому выдержка идёт в ответ, только если в ней есть
     слова вопроса: лучше честное «ничего не нашлось», чем чужой регламент.
     По выдержке на документ: соседние фрагменты перекрываются.
+
+    Вопрос про свои данные («где моя заявка на справку») регламентом не
+    отвечается: от него остаётся слово «справка», и выдержка пришла бы из
+    справки для военкомата. Поэтому здесь — только кнопки к его данным.
+    Обращение в деканат, если модель успела его создать, называется по номеру:
+    оно уже в базе (tools._write_escalation).
     """
-    q_stems = _stems(question) - _STOP_STEMS
-    need = 1 if len(q_stems) <= 2 else 2
-    ranked: list[tuple[int, int, rag.Fragment]] = []
-    for rank, frag in enumerate(progress.fragments or []):
-        hits = len(q_stems & _stems(f"{frag.title} {frag.text}"))
-        if hits >= need:
-            ranked.append((-hits, rank, frag))
-    ranked.sort(key=lambda r: r[:2])
+    own_data = tools_mod.asks_own_data(question)
+    picked = [] if own_data else _pick_fragments(progress.fragments or [], question)
 
-    picked: list[rag.Fragment] = []
-    seen: set[int] = set()
-    for neg_hits, _, frag in ranked:
-        # Вторая выдержка — только такая же сильная, как первая: слабая
-        # «на всякий случай» уводит от ответа
-        if neg_hits != ranked[0][0]:
-            break
-        if frag.document_id in seen:
-            continue
-        seen.add(frag.document_id)
-        picked.append(frag)
-        if len(picked) >= FALLBACK_FRAGMENTS:
-            break
-
+    escalated = ""
+    if progress.escalations:
+        numbers = ", ".join(f"№{n}" for n in progress.escalations)
+        escalated = f"Вопрос уже передан в деканат — обращение {numbers}, ответ придёт в чат MAX."
+    # Кнопки к данным студента — все, кроме кнопки самого обращения
+    data_actions = [a for a in progress.actions if a.get("request_no") not in progress.escalations]
     buttons = ""
-    if progress.actions:
-        buttons = "кнопке ниже" if len(progress.actions) == 1 else "кнопкам ниже"
+    if data_actions:
+        buttons = "кнопке ниже" if len(data_actions) == 1 else "кнопкам ниже"
 
     if picked:
         blocks = "\n\n".join(f"«{f.title}»\n{_excerpt(f.text)}" for f in picked)
-        text = f"{FALLBACK_NOTE}\n\n{blocks}\n\n"
-        text += (
-            f"Твои данные — по {buttons}."
-            if buttons
-            else "Если это не то — спроси ещё раз через минуту."
+        tail = " ".join(
+            part for part in (escalated, f"Твои данные — по {buttons}." if buttons else "") if part
         )
+        text = f"{FALLBACK_NOTE}\n\n{blocks}\n\n"
+        text += tail or "Если это не то — спроси ещё раз через минуту."
+    elif escalated:
+        text = f"Модель сейчас не ответила. {escalated}"
+        if buttons:
+            text += f" Твои данные — по {buttons}."
     elif buttons:
         text = f"Модель сейчас не ответила. Твои данные — по {buttons}, а вопрос можно повторить через минуту."
+    elif own_data:
+        text = (
+            "Модель сейчас не ответила. Свои заявки и отклики — в разделах «Заявки» и «Люди», "
+            "а вопрос можно повторить через минуту."
+        )
     else:
         text = (
             "Модель сейчас не ответила, а в регламентах по этому вопросу ничего не нашлось. "
@@ -500,9 +596,38 @@ def _fallback(progress: _Progress, question: str) -> AssistantAnswer:
         sources=[
             {"title": f.title, "url": f.source_url, "snippet": f.text[:220]} for f in picked
         ],
-        actions=progress.actions,
-        tool_trace=progress.trace,
+        # Копия: запись обращения, не уложившаяся в срок, допишет кнопку в progress
+        # позже — в уже собранный ответ без слов о ней она попасть не должна
+        actions=list(progress.actions),
+        tool_trace=list(progress.trace),
     )
+
+
+def _pick_fragments(fragments: list[rag.Fragment], question: str) -> list[rag.Fragment]:
+    """1–2 выдержки со словами вопроса: по одной на документ, вторая — только
+    такая же сильная, как первая."""
+    q_stems = _stems(question) - _STOP_STEMS
+    need = 1 if len(q_stems) <= 2 else 2
+    ranked: list[tuple[int, int, rag.Fragment]] = []
+    for rank, frag in enumerate(fragments):
+        hits = len(q_stems & _stems(f"{frag.title} {frag.text}"))
+        if hits >= need:
+            ranked.append((-hits, rank, frag))
+    ranked.sort(key=lambda r: r[:2])
+
+    picked: list[rag.Fragment] = []
+    seen: set[int] = set()
+    for neg_hits, _, frag in ranked:
+        # Слабая выдержка «на всякий случай» уводит от ответа
+        if neg_hits != ranked[0][0]:
+            break
+        if frag.document_id in seen:
+            continue
+        seen.add(frag.document_id)
+        picked.append(frag)
+        if len(picked) >= FALLBACK_FRAGMENTS:
+            break
+    return picked
 
 
 def _dump_args(args: dict) -> str:

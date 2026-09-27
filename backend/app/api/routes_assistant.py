@@ -6,7 +6,7 @@ import logging
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request as HttpRequest, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.api.schemas import (
     AskIn,
@@ -86,16 +86,22 @@ async def history(current: BoundUserDep, session: SessionDep) -> ChatHistoryOut:
 
 @router.delete("/history", summary="Очистить диалог")
 async def clear_history(current: BoundUserDep, session: SessionDep) -> dict:
-    res = await session.execute(
-        select(Conversation).where(Conversation.app_user_id == current.app_user.id)
+    # Строки диалогов блокируются до удаления сообщений. Ответ ассистента,
+    # который как раз сохраняется, либо успевает раньше и удаляется вместе со
+    # всеми, либо ждёт очистки и не сохраняется (assistant.ask) — без 500 ни
+    # у очистки, ни у вопроса.
+    ids = list(
+        (
+            await session.execute(
+                select(Conversation.id)
+                .where(Conversation.app_user_id == current.app_user.id)
+                .with_for_update()
+            )
+        ).scalars()
     )
-    for conv in res.scalars():
-        msgs = await session.execute(
-            select(AiMessage).where(AiMessage.conversation_id == conv.id)
-        )
-        for m in msgs.scalars():
-            await session.delete(m)
-        await session.delete(conv)
+    if ids:
+        await session.execute(delete(AiMessage).where(AiMessage.conversation_id.in_(ids)))
+        await session.execute(delete(Conversation).where(Conversation.id.in_(ids)))
     return {"ok": True}
 
 

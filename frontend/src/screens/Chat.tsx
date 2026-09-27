@@ -4,7 +4,7 @@
  *  читается заметно лучше. Пузырь остаётся только у реплики студента. */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUp, FileText, Loader2, Mic, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ArrowUp, FileText, Loader2, Mic, RotateCcw, Sparkles, Square, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -30,7 +30,6 @@ export default function Chat({ me }: { me: Me }) {
   const [loaded, setLoaded] = useState(false);
   // Номер попытки — ключ индикатора: «Повторить» перезапускает его этапы
   const [attempt, setAttempt] = useState(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const inflight = useRef<AbortController | null>(null);
   const lastQuestion = useRef("");
@@ -56,13 +55,19 @@ export default function Chat({ me }: { me: Me }) {
   }, [load]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // До самого низа страницы, а не до последнего сообщения: поле ввода прилипает
+    // к низу экрана и закрыло бы собой свежий ответ — заметнее всего на мгновенном
+    // отказе по лимиту, который приходит раньше, чем докручивается экран
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
   // Ушли с экрана — ответ не ждём: он сохранится на сервере и придёт с историей
   useEffect(() => () => inflight.current?.abort(), []);
 
-  /** Запрос ответа. Новый вызов бросает предыдущий — так работает «Повторить». */
+  /** Запрос ответа. Новый вызов бросает предыдущий — так работает «Повторить».
+   *  Брошенный запрос сервер не отменяет, а повтор того же вопроса, пока ответ
+   *  готовится, к нему присоединяется (решение 061): второй раз модель не
+   *  спрашивается, вопрос в истории не дублируется, ответ — в срок первого запроса. */
   const requestAnswer = async (question: string) => {
     inflight.current?.abort();
     const ctrl = new AbortController();
@@ -153,6 +158,8 @@ export default function Chat({ me }: { me: Me }) {
   };
 
   const clear = async () => {
+    // Пока ответ готовится, очищать нельзя: кнопка неактивна (см. шапку)
+    if (busy) return;
     try {
       await api.clearChat();
       setMessages([]);
@@ -183,12 +190,15 @@ export default function Chat({ me }: { me: Me }) {
           <p className="text-[13px] text-muted">Отвечает по регламентам вуза</p>
         </div>
         {messages.length > 0 && (
+          // Корзина, а не стрелка по кругу: стрелка — это «Повторить» у ответа,
+          // и перепутать их значило бы стереть диалог вместо повтора
           <button
             onClick={clear}
+            disabled={busy}
             aria-label="Очистить диалог"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-raised text-muted"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-raised text-muted disabled:opacity-40"
           >
-            <RotateCcw size={17} />
+            <Trash2 size={17} />
           </button>
         )}
       </header>
@@ -263,7 +273,6 @@ export default function Chat({ me }: { me: Me }) {
         {busy && (
           <Thinking key={attempt} onRetry={() => void requestAnswer(lastQuestion.current)} />
         )}
-        <div ref={bottomRef} />
       </div>
 
       <div className="sticky bottom-0 bg-gradient-to-t from-canvas via-canvas to-transparent px-5 pt-3 pb-24">
@@ -322,8 +331,9 @@ function SourceList({ sources }: { sources: Source[] }) {
 /* Этапы ответа. Сервер прогресс не присылает — строки сменяются по времени,
    но в том порядке, в котором сервис и правда работает: поиск по регламентам →
    данные студента (заявки, события) → модель. Сервер отвечает не позже ~25 с —
-   по таймауту присылает выдержки из регламента (решение 060). Если ответа нет
-   и через 20 с, дело в связи — тогда «Повторить». */
+   по таймауту присылает выдержки из регламента (решение 060). Через 20 с —
+   «Повторить»: пока сервер ещё готовит ответ, повтор дожидается того же ответа
+   по новому соединению, не начиная заново (решение 061), — это и лечит обрыв связи. */
 const STAGES = [
   { at: 0, text: "Ищу в регламентах…" },
   { at: 2500, text: "Сверяю с твоими данными…" },
