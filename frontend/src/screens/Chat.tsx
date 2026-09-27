@@ -3,7 +3,7 @@
  *  Ответ ассистента намеренно без пузыря: длинный текст на чистом канвасе
  *  читается заметно лучше. Пузырь остаётся только у реплики студента. */
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUp, FileText, Loader2, Mic, RotateCcw, Sparkles, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +18,8 @@ import { type Recorder, startRecording, voiceSupported } from "@/shared/voice";
 interface Bubble extends ChatMessage {
   pending?: boolean;
   actions?: AssistantAction[];
+  /** Вопрос, который можно задать заново, — у сообщения об ошибке сети */
+  retry?: string;
 }
 
 export default function Chat({ me }: { me: Me }) {
@@ -26,8 +28,12 @@ export default function Chat({ me }: { me: Me }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // Номер попытки — ключ индикатора: «Повторить» перезапускает его этапы
+  const [attempt, setAttempt] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inflight = useRef<AbortController | null>(null);
+  const lastQuestion = useRef("");
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -53,20 +59,21 @@ export default function Chat({ me }: { me: Me }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, busy]);
 
-  const send = async (text: string) => {
-    const question = text.trim();
-    if (!question || busy) return;
+  // Ушли с экрана — ответ не ждём: он сохранится на сервере и придёт с историей
+  useEffect(() => () => inflight.current?.abort(), []);
 
-    setInput("");
-    setSuggestions([]);
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: question, sources: [], created_at: new Date().toISOString() },
-    ]);
+  /** Запрос ответа. Новый вызов бросает предыдущий — так работает «Повторить». */
+  const requestAnswer = async (question: string) => {
+    inflight.current?.abort();
+    const ctrl = new AbortController();
+    inflight.current = ctrl;
+    lastQuestion.current = question;
+    setAttempt((n) => n + 1);
     setBusy(true);
 
     try {
-      const res = await api.ask(question);
+      const res = await api.ask(question, ctrl.signal);
+      if (ctrl.signal.aborted) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -78,16 +85,49 @@ export default function Chat({ me }: { me: Me }) {
         },
       ]);
     } catch (e) {
+      // Брошен кнопкой «Повторить» или уходом с экрана — это не ошибка
+      if (ctrl.signal.aborted) return;
+      // Лимит вопросов повтором не лечится — кнопку не показываем
+      const limited = e instanceof ApiException && e.code === "RATE_LIMITED";
       const msg =
-        e instanceof ApiException ? e.message : "Не получилось получить ответ";
+        e instanceof ApiException ? e.message : "Не получилось получить ответ — проверь связь";
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: msg, sources: [], created_at: new Date().toISOString() },
+        {
+          role: "assistant",
+          content: msg,
+          sources: [],
+          created_at: new Date().toISOString(),
+          retry: limited ? undefined : question,
+        },
       ]);
     } finally {
-      setBusy(false);
-      inputRef.current?.focus();
+      if (inflight.current === ctrl) {
+        inflight.current = null;
+        setBusy(false);
+        inputRef.current?.focus();
+      }
     }
+  };
+
+  const send = (text: string) => {
+    const question = text.trim();
+    if (!question || busy) return;
+
+    setInput("");
+    setSuggestions([]);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: question, sources: [], created_at: new Date().toISOString() },
+    ]);
+    void requestAnswer(question);
+  };
+
+  /** «Повторить» под сообщением об ошибке: убрать его и спросить заново. */
+  const retryFailed = (index: number, question: string) => {
+    if (busy) return;
+    setMessages((prev) => prev.filter((_, i) => i !== index));
+    void requestAnswer(question);
   };
 
   const runAction = (action: AssistantAction) => {
@@ -192,6 +232,16 @@ export default function Chat({ me }: { me: Me }) {
                 {m.content}
               </p>
               <SourceList sources={m.sources} />
+              {m.retry && (
+                <button
+                  onClick={() => retryFailed(i, m.retry!)}
+                  disabled={busy}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-4 py-2 text-[13px] font-semibold text-ink disabled:opacity-50"
+                >
+                  <RotateCcw size={13} />
+                  Повторить
+                </button>
+              )}
               {m.actions && m.actions.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {m.actions.map((a, idx) => (
@@ -210,7 +260,9 @@ export default function Chat({ me }: { me: Me }) {
           ),
         )}
 
-        {busy && <Thinking />}
+        {busy && (
+          <Thinking key={attempt} onRetry={() => void requestAnswer(lastQuestion.current)} />
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -267,18 +319,62 @@ function SourceList({ sources }: { sources: Source[] }) {
   );
 }
 
-/** Три точки вместо спиннера: ожидание ответа модели — это «думает»,
- *  а не «грузится». */
-function Thinking() {
+/* Этапы ответа. Сервер прогресс не присылает — строки сменяются по времени,
+   но в том порядке, в котором сервис и правда работает: поиск по регламентам →
+   данные студента (заявки, события) → модель. Сервер отвечает не позже ~25 с —
+   по таймауту присылает выдержки из регламента (решение 060). Если ответа нет
+   и через 20 с, дело в связи — тогда «Повторить». */
+const STAGES = [
+  { at: 0, text: "Ищу в регламентах…" },
+  { at: 2500, text: "Сверяю с твоими данными…" },
+  { at: 6000, text: "Формулирую ответ…" },
+];
+const RETRY_AFTER_MS = 20_000;
+
+/** Строка этапа вместо трёх точек: видно, что ассистент работает, а не завис. */
+function Thinking({ onRetry }: { onRetry: () => void }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => setElapsed(Date.now() - started), 500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const stage = [...STAGES].reverse().find((s) => elapsed >= s.at) ?? STAGES[0];
+
   return (
-    <div className="mb-6 flex gap-1.5">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="h-2 w-2 rounded-full bg-faint"
-          style={{ animation: `dot-pulse 1.1s ${i * 0.15}s ease-in-out infinite` }}
-        />
-      ))}
+    <div className="mb-6" role="status" aria-live="polite">
+      <div className="flex items-center gap-2 text-[15px] text-muted">
+        <Sparkles size={15} className="shimmer shrink-0" />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={stage.text}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+          >
+            <span className="shimmer">{stage.text}</span>
+          </motion.span>
+        </AnimatePresence>
+      </div>
+      {elapsed >= RETRY_AFTER_MS && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-3 flex items-center gap-3"
+        >
+          <span className="text-[13px] text-faint">Дольше обычного</span>
+          <button
+            onClick={onRetry}
+            className="inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-4 py-2 text-[13px] font-semibold text-ink"
+          >
+            <RotateCcw size={13} />
+            Повторить
+          </button>
+        </motion.div>
+      )}
     </div>
   );
 }

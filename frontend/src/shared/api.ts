@@ -225,7 +225,9 @@ export const api = {
     if (!resp.ok) throw new ApiException(resp.status, "STT_FAILED", "Не удалось распознать речь");
     return (await resp.json()) as { text: string };
   },
-  ask: (question: string) => post<AskResult>("/assistant/ask", { question }),
+  // signal — чтобы «Повторить» в чате мог бросить зависший запрос
+  ask: (question: string, signal?: AbortSignal) =>
+    request<AskResult>("POST", "/assistant/ask", { question }, signal),
   chatHistory: () => get<ChatHistory>("/assistant/history"),
   clearChat: () => del<{ ok: boolean }>("/assistant/history"),
 };

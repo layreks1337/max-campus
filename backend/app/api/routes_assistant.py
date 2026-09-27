@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request as HttpRequest
+from fastapi import APIRouter, HTTPException, Request as HttpRequest, status
 from sqlalchemy import select
 
 from app.api.schemas import (
@@ -27,12 +27,22 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 @router.post("/ask", response_model=AskOut, summary="Задать вопрос ассистенту")
 async def ask(body: AskIn, current: BoundUserDep, session: SessionDep) -> AskOut:
-    answer = await assistant.ask(
-        session,
-        student=current.student,
-        app_user_id=current.app_user.id,
-        question=body.question.strip(),
-    )
+    try:
+        answer = await assistant.ask(
+            session,
+            student=current.student,
+            app_user_id=current.app_user.id,
+            question=body.question.strip(),
+        )
+    except assistant.RateLimited as exc:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "RATE_LIMITED",
+                "message": assistant.rate_limit_message(exc.retry_after),
+                "details": {"retry_after": exc.retry_after},
+            },
+        ) from None
     return AskOut(
         answer=answer.text,
         sources=[SourceOut(**s) for s in answer.sources],

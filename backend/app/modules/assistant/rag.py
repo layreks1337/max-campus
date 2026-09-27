@@ -136,13 +136,20 @@ async def _vector_hits(session: AsyncSession, query: str, limit: int) -> list[in
     return [r[0] for r in rows]
 
 
-async def _fulltext_hits(session: AsyncSession, query: str, limit: int) -> list[int]:
+async def _fulltext_hits(
+    session: AsyncSession, query: str, limit: int, *, any_word: bool = False
+) -> list[int]:
+    tsq = "plainto_tsquery('russian', :q)"
+    if any_word:
+        # Любое слово вопроса вместо всех сразу: строгое «И» на обычных вопросах
+        # («что нужно для заселения») почти всегда пусто, а без вектора больше
+        # опереться не на что. Порядок — по числу совпавших слов (ts_rank).
+        tsq = f"replace({tsq}::text, '&', '|')::tsquery"
     rows = await session.execute(
         text(
             "SELECT id FROM kb_chunk "
-            "WHERE to_tsvector('russian', text) @@ plainto_tsquery('russian', :q) "
-            "ORDER BY ts_rank(to_tsvector('russian', text), "
-            "                 plainto_tsquery('russian', :q)) DESC "
+            f"WHERE to_tsvector('russian', text) @@ {tsq} "
+            f"ORDER BY ts_rank(to_tsvector('russian', text), {tsq}) DESC "
             "LIMIT :lim"
         ),
         {"q": query, "lim": limit},
@@ -150,13 +157,23 @@ async def _fulltext_hits(session: AsyncSession, query: str, limit: int) -> list[
     return [r[0] for r in rows]
 
 
-async def search(session: AsyncSession, query: str, top_k: int | None = None) -> list[Fragment]:
-    """Гибридный поиск: вектор + полнотекст, объединение через RRF."""
+async def search(
+    session: AsyncSession,
+    query: str,
+    top_k: int | None = None,
+    *,
+    vector: bool = True,
+) -> list[Fragment]:
+    """Гибридный поиск: вектор + полнотекст, объединение через RRF.
+
+    vector=False — только полнотекст, без обращения к Yandex за эмбеддингом:
+    запасной путь, когда модель уже не ответила и ждать её снова нельзя.
+    """
     top_k = top_k or settings.RAG_TOP_K
     pool = max(top_k * 6, 30)
 
-    vec_ids = await _vector_hits(session, query, pool)
-    fts_ids = await _fulltext_hits(session, query, pool)
+    vec_ids = await _vector_hits(session, query, pool) if vector else []
+    fts_ids = await _fulltext_hits(session, query, pool, any_word=not vector)
 
     scores: dict[int, float] = {}
     for rank, cid in enumerate(vec_ids, start=1):

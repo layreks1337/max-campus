@@ -120,6 +120,10 @@ for question, expect_tool, must_have, must_not in CASES:
     actions = res.get("actions") or []
 
     print(f"О: {answer[:260]}")
+    if res.get("error"):
+        # 429 RATE_LIMITED — лимит 20 вопросов за 10 минут (решение 060): два прогона
+        # подряд с одного тестового id в него упираются. Ждать или перезапустить app.
+        print(f"   ошибка сервера: {res['error'][:260]}")
     if tools:
         print(f"   инструменты: {', '.join(tools)}")
     if sources:
