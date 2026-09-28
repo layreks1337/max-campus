@@ -202,12 +202,12 @@ Cloudflare, и у части пользователей вместо прило�
 
 ```bash
 curl http://localhost:8000/api/health
-python scripts/smoke_test.py      # сквозной сценарий, безопасность, демо-вход, билеты: на 28.09 — 96 проверок, все зелёные
+python scripts/smoke_test.py      # сквозной сценарий, безопасность, демо-вход, билеты: на 28.09 — 96 проверок с ключами бота и Yandex в .env, без .env — 86, все зелёные
 DATA_API_TOKEN_STUDENT="MaxInitData dev:990301:Expert" \
   python scripts/check_data_api.py --base-url http://localhost:8000   # DATA-API.yaml: 15 обязательных проверок; без ключей Yandex — 14 из 15, ассистент выключен
-bash scripts/reset_demo.sh        # после них: смоук занимает код привязки A7K2-9M, оба выдают справки
 python scripts/test_assistant.py  # качество ответов ассистента, 10 сценариев (платные вызовы YandexGPT)
 docker compose exec -T app python - < scripts/test_bot_buttons.py   # кнопки бота и приём вебхука, без сети
+bash scripts/reset_demo.sh        # после всех проверок: смоук и тест ассистента занимают код A7K2-9M, смоук и DATA-API выдают справки
 ```
 
 ### Остановка и повторный запуск
@@ -836,9 +836,11 @@ max-campus/
 
 ```bash
 # Бэкенд отдельно (нужна поднятая база: docker compose up -d db)
+cp -n .env.example .env           # если .env ещё нет: DATABASE_URL на 5433 (база из compose), DATA_DIR=./data
 cd backend && python -m venv .venv
 ./.venv/Scripts/python -m pip install -r requirements.txt   # те же версии, что в образе
 PYTHONPATH=. ./.venv/Scripts/python -m uvicorn app.main:app --reload
+# Linux и macOS: .venv/bin/python вместо .venv/Scripts/python
 
 # Фронтенд отдельно, с проксированием API на бэкенд
 cd frontend && npm ci && npm run dev
