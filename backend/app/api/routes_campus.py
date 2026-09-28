@@ -39,6 +39,7 @@ from app.db.models import (
     Student,
     utcnow,
 )
+from app.api.schemas import errors
 from app.api.serializers import app_link, event_share_text
 from app.integrations.max.client import bot_username
 from app.modules.demo.service import demo_filter, demo_student_ids, is_demo
@@ -401,7 +402,10 @@ def _qr_svg(data: str) -> str:
     return buf.getvalue().decode()
 
 
-@router.get("/events/{event_id}/ticket", response_model=TicketOut, summary="Билет на событие")
+@router.get(
+    "/events/{event_id}/ticket", response_model=TicketOut, summary="Билет на событие",
+    responses=errors(404),
+)
 async def event_ticket(event_id: int, current: BoundUserDep, session: SessionDep) -> TicketOut:
     res = await session.execute(
         select(EventRegistration, CalendarEvent)
@@ -446,7 +450,10 @@ class TicketCheckOut(BaseModel):
     event_title: str
 
 
-@router.post("/staff/tickets/check", response_model=TicketCheckOut, summary="Проверить билет на входе")
+@router.post(
+    "/staff/tickets/check", response_model=TicketCheckOut, summary="Проверить билет на входе",
+    responses=errors(400, 404, 409, 429),
+)
 async def check_ticket(body: TicketCheckIn, current: StaffUserDep, session: SessionDep) -> TicketCheckOut:
     """Код с экрана студента или строка из сканера MAX (openCodeReader): принимается
     сам код, ручной ввод с пробелом вместо дефиса и ссылка, в которой есть код."""
@@ -493,7 +500,18 @@ def _ics_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
 
-@public_router.get("/ics/event/{event_id}.ics", summary="Событие в календарь телефона")
+@public_router.get(
+    "/ics/event/{event_id}.ics",
+    summary="Событие в календарь телефона",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Событие в формате iCalendar",
+            "content": {"text/calendar": {"schema": {"type": "string"}}},
+        },
+        **errors(404),
+    },
+)
 async def event_ics(event_id: int, session: SessionDep) -> Response:
     ev = await session.get(CalendarEvent, event_id)
     if ev is None or ev.status != "PUBLISHED":
@@ -534,7 +552,10 @@ class ShareOut(BaseModel):
     link: str
 
 
-@router.post("/events/{event_id}/share", response_model=ShareOut, summary="Поделиться событием")
+@router.post(
+    "/events/{event_id}/share", response_model=ShareOut, summary="Поделиться событием",
+    responses=errors(404),
+)
 async def share_event(event_id: int, current: BoundUserDep, session: SessionDep) -> ShareOut:
     """Бот присылает карточку события в личный чат — дальше её пересылают
     в чат группы обычным «Переслать». Писать в чужие чаты бот не может,
@@ -668,7 +689,10 @@ async def my_group(current: BoundUserDep, session: SessionDep) -> GroupOut:
     )
 
 
-@router.post("/group/polls", response_model=PollOut, status_code=201, summary="Опрос для группы")
+@router.post(
+    "/group/polls", response_model=PollOut, status_code=201, summary="Опрос для группы",
+    responses=errors(403, 422),
+)
 async def create_poll(body: PollIn, current: BoundUserDep, session: SessionDep) -> PollOut:
     st = current.student
     if not await _is_head(session, st):
@@ -706,7 +730,10 @@ async def create_poll(body: PollIn, current: BoundUserDep, session: SessionDep) 
     return await _poll_out(session, poll, st.id)
 
 
-@router.post("/group/polls/{poll_id}/vote", response_model=PollOut, summary="Проголосовать")
+@router.post(
+    "/group/polls/{poll_id}/vote", response_model=PollOut, summary="Проголосовать",
+    responses=errors(404, 422),
+)
 async def vote(poll_id: int, body: VoteIn, current: BoundUserDep, session: SessionDep) -> PollOut:
     poll = await session.get(GroupPoll, poll_id)
     if poll is None or poll.group_name != current.student.group_name:

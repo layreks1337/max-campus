@@ -94,6 +94,11 @@ Authorization: MaxInitData <initData>        (или X-Init-Data: <initData>)
 ## Ошибки
 
 Единый конверт: `{ "error": { "code": "...", "message": "...", "details": { } } }`.
+В `openapi.json` это схема `ErrorResponse`: у каждого метода перечислены его отказы —
+401 у методов со входом, 403 у методов сотрудника, 409 `BINDING_REQUIRED` там, где
+нужен привязанный студент, 413 у методов с телом, 422 и остальные — по коду роута
+(решение 080). Вход описан схемами безопасности `MaxAuth` (`Authorization`) и
+`MaxInitDataHeader` (`X-Init-Data`).
 
 | Код | HTTP | Когда |
 |---|---|---|

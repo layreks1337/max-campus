@@ -28,6 +28,7 @@ from app.api import (
     routes_public,
     routes_requests,
 )
+from app.api.openapi import install_openapi
 from app.core.config import settings
 from app.core.limits import BodySizeLimit
 from app.db.models import Base
@@ -127,7 +128,11 @@ app = FastAPI(
     description=(
         "Кампус — первокурснику, внутри мессенджера MAX: справка файлом в чат, "
         "ответы по регламентам (ассистент на базе RAG), свои люди. Плюс заявления, "
-        "расписание, календарь вуза, конкурсы и хакатоны."
+        "расписание, календарь вуза, конкурсы и хакатоны.\n\n"
+        "Вход — заголовок `Authorization` (схема MaxAuth): подпись запуска MAX, "
+        "ссылка из бота или тестовый вход `MaxInitData dev:<id>:<Имя>` для id "
+        "900000–999999. Любой отказ — конверт `{\"error\": {\"code\", \"message\", "
+        "\"details\"}}` (ErrorResponse); коды ошибок, роли и лимиты — docs/06-api.md."
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -210,6 +215,9 @@ app.include_router(routes_match.router, prefix="/api")
 app.include_router(routes_assistant.router, prefix="/api")
 app.include_router(routes_campus.router, prefix="/api")
 app.include_router(routes_campus.public_router)
+
+# Отказы в схеме — тем же конвертом, что отдаёт сервер (app/api/openapi.py)
+install_openapi(app)
 
 
 # ── Раздача собранного фронтенда ──────────────────────────────────

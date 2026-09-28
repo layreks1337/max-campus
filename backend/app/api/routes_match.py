@@ -17,6 +17,7 @@ from app.api.schemas import (
     Ok,
     SwipeIn,
     SwipeOut,
+    errors,
 )
 from app.core.deps import BoundUserDep, SessionDep
 from app.db.models import (
@@ -145,7 +146,10 @@ async def create_intent(
     return serializers.intent_out(intent, current.student)
 
 
-@router.delete("/intents/{intent_id}", response_model=Ok, summary="Снять объявление")
+@router.delete(
+    "/intents/{intent_id}", response_model=Ok, summary="Снять объявление",
+    responses=errors(404),
+)
 async def close_intent(intent_id: int, current: BoundUserDep, session: SessionDep) -> Ok:
     intent = await session.get(Intent, intent_id)
     if intent is None or intent.author_user_id != current.app_user.id:

@@ -609,7 +609,7 @@ SUBMITTED → IN_REVIEW → SIGNING → READY → ISSUED
 | Что | Где |
 |---|---|
 | Адрес API | `https://195-19-202-143.sslip.io` — пути от корня хоста: `/api/…`, `/verify/…` |
-| OpenAPI 3.1 | [`openapi.json`](openapi.json) в корне — то же, что сервер отдаёт на `/api/openapi.json`; интерактивно — [/api/docs](https://195-19-202-143.sslip.io/api/docs) |
+| OpenAPI 3.1 | [`openapi.json`](openapi.json) в корне — то же, что сервер отдаёт на `/api/openapi.json`; интерактивно — [/api/docs](https://195-19-202-143.sslip.io/api/docs). Вход — схема безопасности `MaxAuth` (заголовок `Authorization`), у каждого метода — его отказы в едином конверте `ErrorResponse`, у PDF — `application/pdf` |
 | Обязательные проверки | [`DATA-API.yaml`](DATA-API.yaml) — формат DATA-API 1.0 организаторов: 14 проверок основного сценария и шаг очистки |
 | Тестовые учётные записи | Логинов и паролей нет: тестовый вход `Authorization: MaxInitData dev:<id>:<Имя>`, id 900000–999999 — [`testdata/roles.json`](testdata/roles.json) |
 | Тестовые данные | [`testdata/`](testdata) — см. [«Тестовые данные»](#тестовые-данные) |

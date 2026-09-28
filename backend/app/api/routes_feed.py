@@ -18,6 +18,7 @@ from app.api.schemas import (
     Ok,
     OpportunityCreateIn,
     OpportunityOut,
+    errors,
 )
 from app.core.config import settings
 from app.core.dates import when_ru
@@ -106,7 +107,10 @@ async def list_events(
     return [serializers.event_out(e, taken.get(e.id, 0), mine.get(e.id)) for e in events]
 
 
-@events_router.post("/{event_id}/register", response_model=EventOut, summary="Записаться")
+@events_router.post(
+    "/{event_id}/register", response_model=EventOut, summary="Записаться",
+    responses=errors(404, 409),
+)
 async def register_event(
     event_id: int, current: BoundUserDep, session: SessionDep
 ) -> EventOut:
@@ -178,7 +182,10 @@ async def register_event(
     return await _event_payload(session, event, current.student.id)
 
 
-@events_router.delete("/{event_id}/register", response_model=EventOut, summary="Отменить запись")
+@events_router.delete(
+    "/{event_id}/register", response_model=EventOut, summary="Отменить запись",
+    responses=errors(404, 409),
+)
 async def unregister_event(
     event_id: int, current: BoundUserDep, session: SessionDep
 ) -> EventOut:
@@ -374,7 +381,10 @@ async def create_opportunity(
     return serializers.opportunity_out(opp, None, 0.0)
 
 
-@opps_router.post("/{opp_id}/interest", response_model=Ok, summary="Отметить интерес")
+@opps_router.post(
+    "/{opp_id}/interest", response_model=Ok, summary="Отметить интерес",
+    responses=errors(404),
+)
 async def set_interest(
     opp_id: int, body: InterestIn, current: BoundUserDep, session: SessionDep
 ) -> Ok:
@@ -402,7 +412,8 @@ async def set_interest(
 
 
 @opps_router.post(
-    "/{opp_id}/looking-for-team", response_model=IntentOut, summary="Ищу команду"
+    "/{opp_id}/looking-for-team", response_model=IntentOut, summary="Ищу команду",
+    responses=errors(404),
 )
 async def looking_for_team(
     opp_id: int, body: LookingForTeamIn, current: BoundUserDep, session: SessionDep
@@ -446,7 +457,10 @@ async def moderation_queue(
     return [serializers.opportunity_out(o) for o in res.scalars()]
 
 
-@moderation_router.post("/{opp_id}/decide", response_model=Ok, summary="Решение модератора")
+@moderation_router.post(
+    "/{opp_id}/decide", response_model=Ok, summary="Решение модератора",
+    responses=errors(404),
+)
 async def moderate(
     opp_id: int,
     approve: bool,

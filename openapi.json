@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MAX Campus API",
-    "description": "Кампус — первокурснику, внутри мессенджера MAX: справка файлом в чат, ответы по регламентам (ассистент на базе RAG), свои люди. Плюс заявления, расписание, календарь вуза, конкурсы и хакатоны.",
+    "description": "Кампус — первокурснику, внутри мессенджера MAX: справка файлом в чат, ответы по регламентам (ассистент на базе RAG), свои люди. Плюс заявления, расписание, календарь вуза, конкурсы и хакатоны.\n\nВход — заголовок `Authorization` (схема MaxAuth): подпись запуска MAX, ссылка из бота или тестовый вход `MaxInitData dev:<id>:<Имя>` для id 900000–999999. Любой отказ — конверт `{\"error\": {\"code\", \"message\", \"details\"}}` (ErrorResponse); коды ошибок, роли и лимиты — docs/06-api.md.",
     "version": "1.0.0"
   },
   "paths": {
@@ -49,19 +49,42 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "PDF справки",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Файл документа больше недоступен (GONE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -99,11 +122,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -141,11 +164,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -162,12 +185,7 @@
         "operationId": "max_webhook_probe_webhook_max_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
+            "description": "Пустой ответ: адрес вебхука жив"
           }
         }
       },
@@ -190,6 +208,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Недостаточно прав для действия (FORBIDDEN, DEMO_READ_ONLY)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -201,40 +229,6 @@
         ],
         "summary": "Профиль текущего пользователя",
         "operationId": "get_me_api_me_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -246,17 +240,25 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/binding/claim": {
@@ -266,49 +268,15 @@
         ],
         "summary": "Привязать студенческий по коду",
         "operationId": "claim_binding_api_binding_claim_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/BindRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -321,17 +289,75 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит (RATE_LIMITED, UPLOAD_QUOTA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/binding/staff": {
@@ -342,49 +368,15 @@
         "summary": "Активировать роль сотрудника",
         "description": "Служебный вход для деканата.\n\nДемонстрационный механизм: коды сотрудников заданы в сиде. В реальном\nвнедрении роль приезжает из кадровой системы вуза.",
         "operationId": "claim_staff_api_binding_staff_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/BindRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -397,17 +389,55 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/binding/demo": {
@@ -418,40 +448,6 @@
         "summary": "Демо-вход: своя копия демо-студента",
         "description": "Вход без кода привязки: аккаунт получает свою копию демо-студента.\n\nКопия одна на аккаунт и не кончается: уже привязанный аккаунт (копией или\nкодом) просто получает свой профиль. ФИО — из профиля MAX, остальное —\nсинтетика шаблона. Работает при DEMO_MODE=true.",
         "operationId": "claim_demo_api_binding_demo_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -463,17 +459,65 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит (RATE_LIMITED, UPLOAD_QUOTA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Сервис ещё не готов или не настроен (DEMO_UNAVAILABLE, UNAVAILABLE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/binding/demo-staff": {
@@ -484,40 +528,6 @@
         "summary": "Демо: роль деканата в один тап",
         "description": "Роль сотрудника, который может выдавать документы (как по коду STAFF-002),\nбез ввода кода. Только для аккаунта с демо-копией: эксперт сам проводит свою\nзаявку до PDF. Очередь такого сотрудника — только заявки его копии.",
         "operationId": "claim_demo_staff_api_binding_demo_staff_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -529,17 +539,45 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недостаточно прав для действия (FORBIDDEN, DEMO_READ_ONLY)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/uploads": {
@@ -549,49 +587,15 @@
         ],
         "summary": "Загрузить файл для поля формы",
         "operationId": "upload_api_uploads_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_api_uploads_post"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -599,24 +603,92 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Upload Api Uploads Post"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
+            "description": "Запрос не распознан: код билета, тип или размер вложения (BAD_TICKET, BAD_FILE_TYPE, FILE_TOO_LARGE)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит (RATE_LIMITED, UPLOAD_QUOTA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Хранилище вложений сервера заполнено (STORAGE_FULL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/home": {
@@ -626,40 +698,6 @@
         ],
         "summary": "Данные главного экрана",
         "operationId": "home_api_home_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -671,17 +709,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/requests/templates": {
@@ -691,66 +747,50 @@
         ],
         "summary": "Доступные шаблоны заявок",
         "operationId": "list_templates_api_requests_templates_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/TemplateOut"
                   },
+                  "type": "array",
                   "title": "Response List Templates Api Requests Templates Get"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/requests/templates/{key}": {
@@ -760,6 +800,14 @@
         ],
         "summary": "Схема полей шаблона",
         "operationId": "get_template_api_requests_templates__key__get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key",
@@ -768,38 +816,6 @@
             "schema": {
               "type": "string",
               "title": "Key"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -814,12 +830,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -834,6 +880,14 @@
         ],
         "summary": "Мои заявки",
         "operationId": "my_requests_api_requests_get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "only_active",
@@ -846,38 +900,6 @@
               "title": "Only Active"
             },
             "description": "Только заявки в работе"
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
           }
         ],
         "responses": {
@@ -895,12 +917,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -913,38 +955,12 @@
         ],
         "summary": "Подать заявку",
         "operationId": "create_request_api_requests_post",
-        "parameters": [
+        "security": [
           {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
+            "MaxAuth": []
           },
           {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
+            "MaxInitDataHeader": []
           }
         ],
         "requestBody": {
@@ -968,12 +984,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -988,6 +1044,14 @@
         ],
         "summary": "Заявка и её история",
         "operationId": "get_request_api_requests__public_no__get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "public_no",
@@ -996,38 +1060,6 @@
             "schema": {
               "type": "string",
               "title": "Public No"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1042,12 +1074,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1062,6 +1124,14 @@
         ],
         "summary": "Отменить заявку",
         "operationId": "cancel_request_api_requests__public_no__cancel_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "public_no",
@@ -1070,38 +1140,6 @@
             "schema": {
               "type": "string",
               "title": "Public No"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1116,12 +1154,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1136,6 +1204,14 @@
         ],
         "summary": "Ответить на уточнение",
         "operationId": "answer_info_api_requests__public_no__info_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "public_no",
@@ -1144,38 +1220,6 @@
             "schema": {
               "type": "string",
               "title": "Public No"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1200,12 +1244,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1220,6 +1304,14 @@
         ],
         "summary": "Очередь заявок",
         "operationId": "staff_queue_api_staff_requests_get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "status",
@@ -1248,38 +1340,6 @@
               "title": "Overdue"
             },
             "description": "Только просроченные"
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
           }
         ],
         "responses": {
@@ -1297,12 +1357,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Нужны права сотрудника (FORBIDDEN)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1317,6 +1397,14 @@
         ],
         "summary": "Сменить статус",
         "operationId": "staff_transition_api_staff_requests__public_no__transition_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "public_no",
@@ -1325,38 +1413,6 @@
             "schema": {
               "type": "string",
               "title": "Public No"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1381,12 +1437,62 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Нужны права сотрудника (FORBIDDEN)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1401,6 +1507,14 @@
         ],
         "summary": "Выдать документ",
         "operationId": "staff_issue_api_staff_requests__public_no__issue_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "public_no",
@@ -1409,38 +1523,6 @@
             "schema": {
               "type": "string",
               "title": "Public No"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1455,12 +1537,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Нужны права сотрудника (FORBIDDEN)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1475,6 +1597,14 @@
         ],
         "summary": "Календарь вуза",
         "operationId": "list_events_api_events_get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "days",
@@ -1486,38 +1616,6 @@
               "minimum": 1,
               "default": 60,
               "title": "Days"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1536,12 +1634,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1555,38 +1673,12 @@
         "summary": "Создать событие",
         "description": "Событие публикуется сразу для всех своей аудитории — только организатору\nиз справочника и не на демо-стенде (решение 068).",
         "operationId": "create_event_api_events_post",
-        "parameters": [
+        "security": [
           {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
+            "MaxAuth": []
           },
           {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
+            "MaxInitDataHeader": []
           }
         ],
         "requestBody": {
@@ -1610,12 +1702,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Нужны права сотрудника (FORBIDDEN)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1631,6 +1753,14 @@
         "summary": "Записаться",
         "description": "Место занимается в транзакции — иначе гонка за последний слот.",
         "operationId": "register_event_api_events__event_id__register_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "event_id",
@@ -1639,38 +1769,6 @@
             "schema": {
               "type": "integer",
               "title": "Event Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1685,12 +1783,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1703,6 +1831,14 @@
         ],
         "summary": "Отменить запись",
         "operationId": "unregister_event_api_events__event_id__register_delete",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "event_id",
@@ -1711,38 +1847,6 @@
             "schema": {
               "type": "integer",
               "title": "Event Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -1757,12 +1861,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1777,6 +1911,14 @@
         ],
         "summary": "Лента возможностей",
         "operationId": "list_opportunities_api_opportunities_get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "kind",
@@ -1805,38 +1947,6 @@
               "title": "Mine"
             },
             "description": "Только мои предложения"
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
           }
         ],
         "responses": {
@@ -1854,12 +1964,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1873,38 +2003,12 @@
         "summary": "Предложить своё",
         "description": "Пользовательский контент уходит на модерацию — иначе спам и реклама.\n\nСразу в ленту — только организатору или модератору из справочника, и не на\nдемо-стенде: там коды сотрудников общие, и «от сотрудника» ничего не значит.",
         "operationId": "create_opportunity_api_opportunities_post",
-        "parameters": [
+        "security": [
           {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
+            "MaxAuth": []
           },
           {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
+            "MaxInitDataHeader": []
           }
         ],
         "requestBody": {
@@ -1928,12 +2032,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1948,6 +2082,14 @@
         ],
         "summary": "Отметить интерес",
         "operationId": "set_interest_api_opportunities__opp_id__interest_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "opp_id",
@@ -1956,38 +2098,6 @@
             "schema": {
               "type": "integer",
               "title": "Opp Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -2012,12 +2122,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2033,6 +2183,14 @@
         "summary": "Ищу команду",
         "description": "Стыковка двух модулей: возможность порождает карточку в колоде матчинга.",
         "operationId": "looking_for_team_api_opportunities__opp_id__looking_for_team_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "opp_id",
@@ -2041,38 +2199,6 @@
             "schema": {
               "type": "integer",
               "title": "Opp Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -2097,12 +2223,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2117,66 +2283,50 @@
         ],
         "summary": "Очередь модерации",
         "operationId": "moderation_queue_api_moderation_queue_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/OpportunityOut"
                   },
+                  "type": "array",
                   "title": "Response Moderation Queue Api Moderation Queue Get"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Нужны права сотрудника (FORBIDDEN)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/moderation/{opp_id}/decide": {
@@ -2186,6 +2336,14 @@
         ],
         "summary": "Решение модератора",
         "operationId": "moderate_api_moderation__opp_id__decide_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "opp_id",
@@ -2204,38 +2362,6 @@
               "type": "boolean",
               "title": "Approve"
             }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
           }
         ],
         "responses": {
@@ -2249,12 +2375,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Нужны права сотрудника (FORBIDDEN)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2269,6 +2425,14 @@
         ],
         "summary": "Колода интентов",
         "operationId": "get_deck_api_match_deck_get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "limit",
@@ -2280,38 +2444,6 @@
               "minimum": 1,
               "default": 20,
               "title": "Limit"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -2330,12 +2462,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2350,49 +2502,15 @@
         ],
         "summary": "Свайп по карточке",
         "operationId": "swipe_api_match_swipe_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SwipeIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2405,17 +2523,55 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/match/matches": {
@@ -2425,66 +2581,50 @@
         ],
         "summary": "Мои отклики",
         "operationId": "my_matches_api_match_matches_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/MatchOut"
                   },
+                  "type": "array",
                   "title": "Response My Matches Api Match Matches Get"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/match/intents": {
@@ -2494,66 +2634,50 @@
         ],
         "summary": "Мои объявления",
         "operationId": "my_intents_api_match_intents_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/IntentOut"
                   },
+                  "type": "array",
                   "title": "Response My Intents Api Match Intents Get"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -2561,49 +2685,15 @@
         ],
         "summary": "Создать объявление",
         "operationId": "create_intent_api_match_intents_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/IntentCreateIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -2616,17 +2706,55 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/match/intents/{intent_id}": {
@@ -2636,6 +2764,14 @@
         ],
         "summary": "Снять объявление",
         "operationId": "close_intent_api_match_intents__intent_id__delete",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "intent_id",
@@ -2644,38 +2780,6 @@
             "schema": {
               "type": "integer",
               "title": "Intent Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -2690,12 +2794,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2710,40 +2844,6 @@
         ],
         "summary": "Мой профиль знакомств",
         "operationId": "get_profile_api_match_profile_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2755,17 +2855,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       },
       "put": {
         "tags": [
@@ -2773,49 +2891,15 @@
         ],
         "summary": "Сохранить профиль",
         "operationId": "save_profile_api_match_profile_put",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/MatchProfileIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2828,17 +2912,55 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/assistant/ask": {
@@ -2848,49 +2970,15 @@
         ],
         "summary": "Задать вопрос ассистенту",
         "operationId": "ask_api_assistant_ask_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AskIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2903,17 +2991,65 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит (RATE_LIMITED, UPLOAD_QUOTA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/assistant/history": {
@@ -2923,40 +3059,6 @@
         ],
         "summary": "История диалога",
         "operationId": "history_api_assistant_history_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2968,17 +3070,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -2986,64 +3106,48 @@
         ],
         "summary": "Очистить диалог",
         "operationId": "clear_history_api_assistant_history_delete",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Clear History Api Assistant History Delete"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/assistant/status": {
@@ -3077,64 +3181,88 @@
         "summary": "Распознать голосовой вопрос",
         "description": "Приложение пишет звук в PCM 16 кГц прямо в браузере и шлёт сюда сырые\nбайты — SpeechKit принимает их без перекодирования, а формат WebM,\nкоторый отдаёт MediaRecorder, он не понимает.",
         "operationId": "transcribe_api_assistant_transcribe_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Transcribe Api Assistant Transcribe Post"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Запись слишком короткая (TOO_SHORT)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит (RATE_LIMITED, UPLOAD_QUOTA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Внешний сервис не ответил (STT_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Сервис ещё не готов или не настроен (DEMO_UNAVAILABLE, UNAVAILABLE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/schedule": {
@@ -3144,6 +3272,14 @@
         ],
         "summary": "Расписание группы на неделю",
         "operationId": "schedule_api_schedule_get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "week",
@@ -3153,38 +3289,6 @@
               "type": "integer",
               "default": 0,
               "title": "Week"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -3199,12 +3303,32 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3219,40 +3343,6 @@
         ],
         "summary": "Мой день: пары, события, дедлайны",
         "operationId": "today_api_today_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3264,17 +3354,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/grades": {
@@ -3284,40 +3392,6 @@
         ],
         "summary": "Баллы по предметам",
         "operationId": "grades_api_grades_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3329,17 +3403,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/buildings": {
@@ -3349,66 +3441,50 @@
         ],
         "summary": "Корпуса и как найти аудиторию",
         "operationId": "buildings_api_buildings_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/BuildingOut"
                   },
+                  "type": "array",
                   "title": "Response Buildings Api Buildings Get"
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/events/{event_id}/ticket": {
@@ -3418,6 +3494,14 @@
         ],
         "summary": "Билет на событие",
         "operationId": "event_ticket_api_events__event_id__ticket_get",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "event_id",
@@ -3426,38 +3510,6 @@
             "schema": {
               "type": "integer",
               "title": "Event Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -3472,12 +3524,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3493,49 +3575,15 @@
         "summary": "Проверить билет на входе",
         "description": "Код с экрана студента или строка из сканера MAX (openCodeReader): принимается\nсам код, ручной ввод с пробелом вместо дефиса и ссылка, в которой есть код.",
         "operationId": "check_ticket_api_staff_tickets_check_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TicketCheckIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -3548,17 +3596,95 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
+            "description": "Запрос не распознан: код билета, тип или размер вложения (BAD_TICKET, BAD_FILE_TYPE, FILE_TOO_LARGE)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Нужны права сотрудника (FORBIDDEN)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит (RATE_LIMITED, UPLOAD_QUOTA)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/events/{event_id}/share": {
@@ -3569,6 +3695,14 @@
         "summary": "Поделиться событием",
         "description": "Бот присылает карточку события в личный чат — дальше её пересылают\nв чат группы обычным «Переслать». Писать в чужие чаты бот не может,\nа пересылка из лички работает везде.",
         "operationId": "share_event_api_events__event_id__share_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "event_id",
@@ -3577,38 +3711,6 @@
             "schema": {
               "type": "integer",
               "title": "Event Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -3623,12 +3725,42 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3643,40 +3775,6 @@
         ],
         "summary": "Моя группа и опросы",
         "operationId": "my_group_api_group_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3688,17 +3786,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/group/polls": {
@@ -3708,49 +3824,15 @@
         ],
         "summary": "Опрос для группы",
         "operationId": "create_poll_api_group_polls_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PollIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -3763,17 +3845,65 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недостаточно прав для действия (FORBIDDEN, DEMO_READ_ONLY)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ]
       }
     },
     "/api/group/polls/{poll_id}/vote": {
@@ -3783,6 +3913,14 @@
         ],
         "summary": "Проголосовать",
         "operationId": "vote_api_group_polls__poll_id__vote_post",
+        "security": [
+          {
+            "MaxAuth": []
+          },
+          {
+            "MaxInitDataHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "poll_id",
@@ -3791,38 +3929,6 @@
             "schema": {
               "type": "integer",
               "title": "Poll Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Init-Data",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Init-Data"
             }
           }
         ],
@@ -3847,12 +3953,52 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "401": {
+            "description": "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Студенческий не привязан — нужен вход (BINDING_REQUIRED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3880,19 +4026,31 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Событие в формате iCalendar",
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Ошибка формы или параметров (VALIDATION_FAILED)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -4198,6 +4356,52 @@
         ],
         "title": "DocumentOut"
       },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Машинный код ошибки: NO_AUTH, NOT_FOUND, RATE_LIMITED… — docs/06-api.md"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Текст для человека, по-русски"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details",
+            "description": "Подробности: у формы заявки — ошибки по полям"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "description": "Единый конверт ошибок: так отвечает любой отказ сервера (main.py)."
+      },
       "EventCreateIn": {
         "properties": {
           "title": {
@@ -4479,19 +4683,6 @@
           "polls"
         ],
         "title": "GroupOut"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
       },
       "HomeOut": {
         "properties": {
@@ -6091,46 +6282,6 @@
         ],
         "title": "TransitionIn"
       },
-      "ValidationError": {
-        "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Location"
-          },
-          "msg": {
-            "type": "string",
-            "title": "Message"
-          },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
-          }
-        },
-        "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError"
-      },
       "VerifyOut": {
         "properties": {
           "found": {
@@ -6278,6 +6429,20 @@
           "days"
         ],
         "title": "WeekOut"
+      }
+    },
+    "securitySchemes": {
+      "MaxAuth": {
+        "type": "apiKey",
+        "description": "`MaxInitData <initData>` — подпись запуска мини-приложения MAX; `MaxLink <токен>` — вход по ссылке из бота; `MaxInitData dev:<id>:<Имя>` — тестовый вход, только id 900000–999999",
+        "in": "header",
+        "name": "Authorization"
+      },
+      "MaxInitDataHeader": {
+        "type": "apiKey",
+        "description": "Строка запуска MAX без префикса — то же, что `Authorization: MaxInitData <initData>`",
+        "in": "header",
+        "name": "X-Init-Data"
       }
     }
   }

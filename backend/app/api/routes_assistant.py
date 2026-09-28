@@ -14,6 +14,7 @@ from app.api.schemas import (
     ChatHistoryOut,
     ChatMessageOut,
     SourceOut,
+    errors,
 )
 from app.core.config import is_test_user_id, settings
 from app.core.deps import BoundUserDep, SessionDep
@@ -26,7 +27,10 @@ log = logging.getLogger("api.assistant")
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 
-@router.post("/ask", response_model=AskOut, summary="Задать вопрос ассистенту")
+@router.post(
+    "/ask", response_model=AskOut, summary="Задать вопрос ассистенту",
+    responses=errors(429),
+)
 async def ask(
     body: AskIn, request: HttpRequest, current: BoundUserDep, session: SessionDep
 ) -> AskOut:
@@ -131,7 +135,10 @@ _voice_by_ip = SlidingWindow(
 )
 
 
-@router.post("/transcribe", summary="Распознать голосовой вопрос")
+@router.post(
+    "/transcribe", summary="Распознать голосовой вопрос",
+    responses=errors(422, 429, 502, 503, notes={422: "Запись слишком короткая (TOO_SHORT)"}),
+)
 async def transcribe(request: HttpRequest, current: BoundUserDep) -> dict:
     """Приложение пишет звук в PCM 16 кГц прямо в браузере и шлёт сюда сырые
     байты — SpeechKit принимает их без перекодирования, а формат WebM,

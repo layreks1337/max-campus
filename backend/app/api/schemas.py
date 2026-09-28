@@ -26,13 +26,45 @@ def _web_url(value: str, *, allow_path: bool = False) -> str:
 
 
 class ErrorBody(BaseModel):
-    code: str
-    message: str
-    details: dict[str, Any] | None = None
+    code: str = Field(description="Машинный код ошибки: NO_AUTH, NOT_FOUND, RATE_LIMITED… — docs/06-api.md")
+    message: str = Field(description="Текст для человека, по-русски")
+    details: dict[str, Any] | None = Field(
+        default=None, description="Подробности: у формы заявки — ошибки по полям"
+    )
 
 
 class ErrorResponse(BaseModel):
+    """Единый конверт ошибок: так отвечает любой отказ сервера (main.py)."""
+
     error: ErrorBody
+
+
+# Что значит код ответа — для OpenAPI. Машинные коды внутри конверта — docs/06-api.md.
+ERROR_DESCRIPTIONS: dict[int, str] = {
+    400: "Запрос не распознан: код билета, тип или размер вложения (BAD_TICKET, BAD_FILE_TYPE, FILE_TOO_LARGE)",
+    401: "Нет заголовка авторизации, подпись не сошлась или истекла (NO_AUTH, BAD_INIT_DATA)",
+    403: "Недостаточно прав для действия (FORBIDDEN, DEMO_READ_ONLY)",
+    404: "Не найдено или принадлежит другому пользователю (NOT_FOUND, BAD_CODE, DEMO_DISABLED)",
+    409: "Конфликт состояния (BINDING_REQUIRED, BAD_TRANSITION, ALREADY_BOUND, ATTENDED…)",
+    410: "Файл документа больше недоступен (GONE)",
+    413: "Тело запроса больше лимита, не дочитывается (PAYLOAD_TOO_LARGE)",
+    422: "Ошибка формы или параметров (VALIDATION_FAILED)",
+    429: "Превышен лимит (RATE_LIMITED, UPLOAD_QUOTA)",
+    502: "Внешний сервис не ответил (STT_FAILED)",
+    503: "Сервис ещё не готов или не настроен (DEMO_UNAVAILABLE, UNAVAILABLE)",
+    507: "Хранилище вложений сервера заполнено (STORAGE_FULL)",
+}
+
+
+def errors(*codes: int, notes: dict[int, str] | None = None) -> dict[int | str, dict[str, Any]]:
+    """`responses=` для роута: какие отказы он отдаёт, все — в конверте ErrorResponse.
+    `notes` — своё описание кода вместо общего. 401, 403 и 409 BINDING_REQUIRED от
+    зависимостей входа дописывает app/api/openapi.py."""
+    notes = notes or {}
+    return {
+        code: {"model": ErrorResponse, "description": notes.get(code, ERROR_DESCRIPTIONS[code])}
+        for code in codes
+    }
 
 
 class Ok(BaseModel):

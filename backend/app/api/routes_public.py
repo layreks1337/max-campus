@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request as HttpRequest, Response
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 
-from app.api.schemas import VerifyOut
+from app.api.schemas import VerifyOut, errors
 from app.core.config import settings
 from app.core.deps import SessionDep
 from app.db.models import Document, Request, utcnow
@@ -43,7 +43,18 @@ async def health() -> dict:
     }
 
 
-@router.get("/api/documents/{doc_uuid}", summary="Скачать документ")
+@router.get(
+    "/api/documents/{doc_uuid}",
+    summary="Скачать документ",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "description": "PDF справки",
+            "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        **errors(404, 410),
+    },
+)
 async def download_document(doc_uuid: str, session: SessionDep) -> FileResponse:
     res = await session.execute(select(Document).where(Document.uuid == doc_uuid))
     doc = res.scalar_one_or_none()
@@ -262,7 +273,7 @@ def _check_webhook_secret(request: HttpRequest) -> tuple[bool, bool]:
     return True, False
 
 
-@router.post("/webhook/max", summary="Вебхук Bot API")
+@router.post("/webhook/max", summary="Вебхук Bot API", responses=errors(403))
 async def max_webhook(request: HttpRequest, session: SessionDep) -> dict:
     """Отвечаем 200 всегда и быстро: иначе таймаут -> ретрай -> дубли у пользователя.
 
@@ -293,6 +304,11 @@ async def max_webhook(request: HttpRequest, session: SessionDep) -> dict:
     return {"ok": True}
 
 
-@router.get("/webhook/max", summary="Проверка вебхука")
+@router.get(
+    "/webhook/max",
+    summary="Проверка вебхука",
+    response_class=Response,
+    responses={200: {"description": "Пустой ответ: адрес вебхука жив"}},
+)
 async def max_webhook_probe() -> Response:
     return Response(status_code=200)

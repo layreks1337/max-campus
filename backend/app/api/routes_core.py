@@ -20,6 +20,7 @@ from app.api.schemas import (
     HomeOut,
     MeOut,
     StaffOut,
+    errors,
 )
 from app.core.config import settings
 from app.core.dates import local
@@ -88,7 +89,10 @@ async def get_me(current: CurrentUserDep) -> MeOut:
     )
 
 
-@router.post("/binding/claim", response_model=MeOut, summary="Привязать студенческий по коду")
+@router.post(
+    "/binding/claim", response_model=MeOut, summary="Привязать студенческий по коду",
+    responses=errors(404, 409, 429),
+)
 async def claim_binding(
     body: BindRequest, request: HttpRequest, current: CurrentUserDep, session: SessionDep
 ) -> MeOut:
@@ -131,7 +135,10 @@ async def claim_binding(
     return await get_me(current)
 
 
-@router.post("/binding/staff", response_model=MeOut, summary="Активировать роль сотрудника")
+@router.post(
+    "/binding/staff", response_model=MeOut, summary="Активировать роль сотрудника",
+    responses=errors(404),
+)
 async def claim_staff(body: BindRequest, current: CurrentUserDep, session: SessionDep) -> MeOut:
     """Служебный вход для деканата.
 
@@ -183,7 +190,10 @@ def _require_demo_mode() -> None:
         )
 
 
-@router.post("/binding/demo", response_model=MeOut, summary="Демо-вход: своя копия демо-студента")
+@router.post(
+    "/binding/demo", response_model=MeOut, summary="Демо-вход: своя копия демо-студента",
+    responses=errors(404, 409, 429, 503),
+)
 async def claim_demo(request: HttpRequest, current: CurrentUserDep, session: SessionDep) -> MeOut:
     """Вход без кода привязки: аккаунт получает свою копию демо-студента.
 
@@ -235,7 +245,8 @@ async def claim_demo(request: HttpRequest, current: CurrentUserDep, session: Ses
 
 
 @router.post(
-    "/binding/demo-staff", response_model=MeOut, summary="Демо: роль деканата в один тап"
+    "/binding/demo-staff", response_model=MeOut, summary="Демо: роль деканата в один тап",
+    responses=errors(403, 404),
 )
 async def claim_demo_staff(current: CurrentUserDep, session: SessionDep) -> MeOut:
     """Роль сотрудника, который может выдавать документы (как по коду STAFF-002),
@@ -294,7 +305,7 @@ def _check_upload_quota(student_id: int) -> None:
         )
 
 
-@router.post("/uploads", summary="Загрузить файл для поля формы")
+@router.post("/uploads", summary="Загрузить файл для поля формы", responses=errors(400, 429, 507))
 async def upload(file: UploadFile, current: BoundUserDep) -> dict:
     allowed = {".pdf", ".jpg", ".jpeg", ".png", ".heic", ".webp"}
     suffix = Path(file.filename or "").suffix.lower()

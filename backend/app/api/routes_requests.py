@@ -15,6 +15,7 @@ from app.api.schemas import (
     RequestOut,
     TemplateOut,
     TransitionIn,
+    errors,
 )
 from app.core.deps import (
     ISSUER_ROLES,
@@ -64,7 +65,10 @@ async def list_templates(current: BoundUserDep, session: SessionDep) -> list[Tem
     return [serializers.template_out(t) for t in res.scalars()]
 
 
-@router.get("/templates/{key}", response_model=TemplateOut, summary="Схема полей шаблона")
+@router.get(
+    "/templates/{key}", response_model=TemplateOut, summary="Схема полей шаблона",
+    responses=errors(404),
+)
 async def get_template(key: str, current: BoundUserDep, session: SessionDep) -> TemplateOut:
     tpl = await session.get(RequestTemplate, key)
     if tpl is None or not tpl.active:
@@ -92,7 +96,10 @@ async def my_requests(
     return [serializers.request_out(r) for r in res.scalars().unique()]
 
 
-@router.post("", response_model=RequestOut, status_code=201, summary="Подать заявку")
+@router.post(
+    "", response_model=RequestOut, status_code=201, summary="Подать заявку",
+    responses=errors(404),
+)
 async def create_request(
     body: CreateRequestIn, current: BoundUserDep, session: SessionDep
 ) -> RequestOut:
@@ -134,7 +141,10 @@ async def create_request(
     return serializers.request_out(res.scalar_one())
 
 
-@router.get("/{public_no}", response_model=RequestOut, summary="Заявка и её история")
+@router.get(
+    "/{public_no}", response_model=RequestOut, summary="Заявка и её история",
+    responses=errors(404),
+)
 async def get_request(public_no: str, current: BoundUserDep, session: SessionDep) -> RequestOut:
     res = await session.execute(
         _load_full(select(Request).where(Request.public_no == public_no))
@@ -148,7 +158,10 @@ async def get_request(public_no: str, current: BoundUserDep, session: SessionDep
     return serializers.request_out(req)
 
 
-@router.post("/{public_no}/cancel", response_model=RequestOut, summary="Отменить заявку")
+@router.post(
+    "/{public_no}/cancel", response_model=RequestOut, summary="Отменить заявку",
+    responses=errors(404, 409),
+)
 async def cancel_request(
     public_no: str, current: BoundUserDep, session: SessionDep
 ) -> RequestOut:
@@ -176,7 +189,10 @@ async def cancel_request(
     return serializers.request_out(req)
 
 
-@router.post("/{public_no}/info", response_model=RequestOut, summary="Ответить на уточнение")
+@router.post(
+    "/{public_no}/info", response_model=RequestOut, summary="Ответить на уточнение",
+    responses=errors(404, 409),
+)
 async def answer_info(
     public_no: str, body: AnswerInfoIn, current: BoundUserDep, session: SessionDep
 ) -> RequestOut:
@@ -246,7 +262,8 @@ async def staff_queue(
 
 
 @staff_router.post(
-    "/{public_no}/transition", response_model=RequestOut, summary="Сменить статус"
+    "/{public_no}/transition", response_model=RequestOut, summary="Сменить статус",
+    responses=errors(404, 409),
 )
 async def staff_transition(
     public_no: str, body: TransitionIn, current: StaffUserDep, session: SessionDep
@@ -305,7 +322,10 @@ async def staff_transition(
     return serializers.request_out(req, with_student=True)
 
 
-@staff_router.post("/{public_no}/issue", response_model=RequestOut, summary="Выдать документ")
+@staff_router.post(
+    "/{public_no}/issue", response_model=RequestOut, summary="Выдать документ",
+    responses=errors(404, 409),
+)
 async def staff_issue(
     public_no: str, current: StaffUserDep, session: SessionDep
 ) -> RequestOut:

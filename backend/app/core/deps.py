@@ -6,7 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, Security, status
+from fastapi.security import APIKeyHeader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -85,9 +86,29 @@ def _extract_raw(authorization: str | None, x_init_data: str | None) -> str:
     )
 
 
+# Схемы входа для OpenAPI (securitySchemes): сами заголовки разбирает _extract_raw,
+# отказ — наш 401 в едином формате, поэтому auto_error=False.
+max_auth = APIKeyHeader(
+    name="Authorization",
+    scheme_name="MaxAuth",
+    description=(
+        "`MaxInitData <initData>` — подпись запуска мини-приложения MAX; "
+        "`MaxLink <токен>` — вход по ссылке из бота; "
+        "`MaxInitData dev:<id>:<Имя>` — тестовый вход, только id 900000–999999"
+    ),
+    auto_error=False,
+)
+init_data_header = APIKeyHeader(
+    name="X-Init-Data",
+    scheme_name="MaxInitDataHeader",
+    description="Строка запуска MAX без префикса — то же, что `Authorization: MaxInitData <initData>`",
+    auto_error=False,
+)
+
+
 async def get_init_data(
-    authorization: Annotated[str | None, Header()] = None,
-    x_init_data: Annotated[str | None, Header(alias="X-Init-Data")] = None,
+    authorization: Annotated[str | None, Security(max_auth)],
+    x_init_data: Annotated[str | None, Security(init_data_header)],
 ) -> InitData:
     raw = _extract_raw(authorization, x_init_data)
     try:
