@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import logging
 from html import escape
@@ -171,18 +172,60 @@ async def verify_page(doc_uuid: str, session: SessionDep) -> HTMLResponse:
 
 # ── Вебхук бота ───────────────────────────────────────────────────
 
-_seen_updates: dict[str, float] = {}
-
 # Один раз за процесс: пишем в лог, пришёл ли у первого вебхука заголовок секрета
-# (сам секрет не пишем никогда), и предупреждаем про вебхуки без него. По этой
-# строке решается, можно ли включать MAX_WEBHOOK_REQUIRE_SECRET.
+# (сам секрет не пишем никогда), и предупреждаем про вебхуки без него.
 _webhook_header_logged = False
 _webhook_no_secret_warned = False
 
+# Секрет подтверждён самим MAX: пришёл апдейт с верным заголовком (решение 077).
+# Раз MAX его присылает, запрос без заголовка — уже не MAX, и он отклоняется, даже
+# если MAX_WEBHOOK_REQUIRE_SECRET выключен. Отметка переживает рестарт — файл в
+# DATA_DIR с отпечатком секрета: новый секрет её сбрасывает. None — файл ещё не читали.
+_secret_confirmed: bool | None = None
+_SECRET_MARK_FILE = "webhook_secret_confirmed"
 
-def _check_webhook_secret(request: HttpRequest) -> bool:
-    """Пропускать ли вебхук. Неверный секрет — всегда нет; без секрета — по флагу.
 
+def _secret_mark_path() -> Path:
+    return Path(settings.DATA_DIR) / _SECRET_MARK_FILE
+
+
+def _secret_fingerprint() -> str:
+    return hashlib.sha256(b"campus-webhook-secret:" + settings.MAX_WEBHOOK_SECRET.encode()).hexdigest()
+
+
+def _secret_confirmed_by_max() -> bool:
+    global _secret_confirmed
+    if _secret_confirmed is None:
+        try:
+            _secret_confirmed = _secret_mark_path().read_text().strip() == _secret_fingerprint()
+        except OSError:
+            _secret_confirmed = False
+    return _secret_confirmed
+
+
+def _confirm_secret() -> None:
+    global _secret_confirmed
+    if _secret_confirmed_by_max():
+        return
+    _secret_confirmed = True
+    try:
+        _secret_mark_path().write_text(_secret_fingerprint())
+    except OSError:
+        log.warning("Отметку о секрете вебхука не записать в %s — после рестарта её не будет",
+                    _secret_mark_path())
+    log.warning(
+        "MAX прислал верный секрет вебхука — дальше запросы без заголовка "
+        "X-Max-Bot-Api-Secret отклоняются. Сбросить: удалить %s и перезапустить",
+        _secret_mark_path(),
+    )
+
+
+def _check_webhook_secret(request: HttpRequest) -> tuple[bool, bool]:
+    """(пропускать ли вебхук, подтвердил ли его секрет).
+
+    Неверный секрет — всегда отказ. Без заголовка — отказ, если так велит
+    MAX_WEBHOOK_REQUIRE_SECRET или MAX уже присылал верный секрет; иначе запрос
+    принимается, но не считается подтверждённым: прислать его мог кто угодно.
     Только заголовок: секрет в строке запроса осел бы в журнале доступа.
     """
     global _webhook_header_logged, _webhook_no_secret_warned
@@ -193,7 +236,7 @@ def _check_webhook_secret(request: HttpRequest) -> bool:
         # Такой запрос прислал не MAX (подделка или смоук-тест после выкладки),
         # поэтому он не занимает «первый вебхук» в логе ниже.
         log.warning("Вебхук с неверным секретом отклонён")
-        return False
+        return False, False
 
     if not _webhook_header_logged:
         _webhook_header_logged = True
@@ -202,17 +245,21 @@ def _check_webhook_secret(request: HttpRequest) -> bool:
             "есть" if header else "отсутствует",
         )
 
-    if header or not expected:
-        return True
-    if settings.MAX_WEBHOOK_REQUIRE_SECRET:
+    if not expected:
+        return True, False
+    if header:
+        _confirm_secret()
+        return True, True
+    if settings.MAX_WEBHOOK_REQUIRE_SECRET or _secret_confirmed_by_max():
         log.warning("Вебхук без заголовка секрета отклонён")
-        return False
+        return False, False
     if not _webhook_no_secret_warned:
         _webhook_no_secret_warned = True
         log.warning(
-            "вебхук без заголовка секрета — принят, потому что MAX_WEBHOOK_REQUIRE_SECRET=false"
+            "вебхук без заголовка секрета — принят: MAX верный секрет ещё не присылал, "
+            "а MAX_WEBHOOK_REQUIRE_SECRET=false"
         )
-    return True
+    return True, False
 
 
 @router.post("/webhook/max", summary="Вебхук Bot API")
@@ -222,7 +269,8 @@ async def max_webhook(request: HttpRequest, session: SessionDep) -> dict:
     Исключение — запрос не прошёл проверку секрета: это не MAX, а подделка,
     ей 403 и никакой обработки.
     """
-    if not _check_webhook_secret(request):
+    allowed, verified = _check_webhook_secret(request)
+    if not allowed:
         raise HTTPException(
             status_code=403,
             detail={"code": "BAD_WEBHOOK_SECRET", "message": "Неверный секрет вебхука"},
@@ -232,11 +280,13 @@ async def max_webhook(request: HttpRequest, session: SessionDep) -> dict:
         body = await request.json()
     except Exception:
         return {"ok": True}
+    if not isinstance(body, dict):
+        return {"ok": True}
 
     try:
         from app.integrations.max.webhook import handle_update
 
-        await handle_update(session, body)
+        await handle_update(session, body, verified=verified)
     except Exception:
         # ошибка обработки не должна давать 5xx — MAX будет ретраить вечно
         log.exception("Ошибка обработки апдейта")

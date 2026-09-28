@@ -121,7 +121,7 @@ Authorization: MaxInitData <initData>        (или X-Init-Data: <initData>)
 | `RATE_LIMITED` | 429 | Превышен лимит: подбор кода привязки, неверные коды билетов, демо-вход с тестовых id, вопросы и голосовые вопросы ассистенту |
 | `DEMO_DISABLED` | 404 | Демо-вход выключен на сервере (`DEMO_MODE=false`) |
 | `DEMO_UNAVAILABLE` | 503 | Демо-данные ещё не загружены (первые секунды после старта) |
-| `BAD_WEBHOOK_SECRET` | 403 | Вебхук с неверным `X-Max-Bot-Api-Secret` |
+| `BAD_WEBHOOK_SECRET` | 403 | Вебхук с неверным `X-Max-Bot-Api-Secret` или без него, когда секрет обязателен: MAX уже присылал верный или включён `MAX_WEBHOOK_REQUIRE_SECRET` (решение 077) |
 | `STT_FAILED` | 502 | SpeechKit не распознал голосовой вопрос или недоступен |
 | `UNAVAILABLE` | 503 | Распознавание речи не настроено (нет ключа Yandex Cloud) |
 | `TOO_SHORT` | 422 | Голосовая запись слишком короткая |
