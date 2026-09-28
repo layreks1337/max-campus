@@ -5,6 +5,7 @@ import App from "@/App";
 import { ToastProvider } from "@/components/ui/toast";
 import "@/index.css";
 import { captureLinkToken } from "@/shared/max";
+import { installMaxEmulator } from "@/shared/max-emulator";
 import { installScrollMotion } from "@/shared/scroll-motion";
 
 /* Ссылка из бота (?lt=…): до первого запроса к API забрать токен входа
@@ -42,6 +43,8 @@ try {
 }
 
 installScrollMotion();
+// ?maxEmu=android — проверка сканера, вибрации и «Поделиться» без телефона
+installMaxEmulator();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

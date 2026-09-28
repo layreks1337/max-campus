@@ -15,6 +15,7 @@ import { CardSkeleton } from "@/components/ui/primitives";
 import { api, ApiException, isSessionExpired, onSessionExpired } from "@/shared/api";
 import {
   closeApp,
+  emulatedPlatform,
   getStartParam,
   isInsideMax,
   isLinkSession,
@@ -203,7 +204,8 @@ export default function App() {
         />
       )}
 
-      {!isInsideMax() && (isLinkSession() ? <LinkBadge /> : isDebug() && <DevBadge />)}
+      {!isInsideMax() &&
+        (emulatedPlatform() ? <EmuBadge /> : isLinkSession() ? <LinkBadge /> : isDebug() && <DevBadge />)}
     </div>
   );
 }
@@ -281,6 +283,16 @@ function DevBadge() {
   return (
     <div className="pointer-events-none fixed top-2 left-2 z-[90] rounded-full bg-warn/15 px-2.5 py-1 text-[10px] font-semibold text-warn">
       DEV · вне MAX
+    </div>
+  );
+}
+
+/** Включён эмулятор клиента MAX (?maxEmu=android): сканер, вибрация и окно
+ *  «Поделиться» отвечают как в MAX, но это модель — так и пишем. */
+function EmuBadge() {
+  return (
+    <div className="pointer-events-none fixed top-2 left-2 z-[90] rounded-full bg-warn/15 px-2.5 py-1 text-[10px] font-semibold text-warn">
+      Эмулятор MAX · {emulatedPlatform()}
     </div>
   );
 }

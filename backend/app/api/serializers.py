@@ -15,6 +15,7 @@ from app.api.schemas import (
     TemplateOut,
 )
 from app.core.config import settings
+from app.core.dates import when_full_ru
 from app.db.models import (
     EVENT_KIND_TITLES,
     INTENT_KINDS,
@@ -29,6 +30,7 @@ from app.db.models import (
     RequestTemplate,
     Student,
 )
+from app.integrations.max.client import app_url_for, known_bot_username
 from app.modules.demo.service import is_demo
 
 
@@ -114,6 +116,29 @@ def request_out(r: Request, *, with_student: bool = False) -> RequestOut:
     )
 
 
+def app_link(param: str, bot: str | None = None) -> str:
+    """Диплинк, открывающий мини-приложение сразу на нужном экране (start_param).
+
+    `bot` — имя бота, если его уже узнали (routes_campus: `await bot_username()`);
+    по умолчанию — из настроек без сетевого запроса."""
+    name = known_bot_username() if bot is None else bot
+    if name:
+        return f"https://max.ru/{name}?startapp={param}"
+    # Имя бота не узнать (пусто в настройках и MAX недоступен) — ссылка на само
+    # приложение: браузер откроет тот же экран по WebAppStartParam
+    public_url = settings.MINIAPP_PUBLIC_URL.strip().rstrip("/")
+    return app_url_for(0, public_url, signed=False, start_param=param)
+
+
+def event_share_text(e: CalendarEvent) -> str:
+    """Текст карточки события — для окна «Поделиться» MAX и для карточки от бота.
+    Ссылку добавляет вызывающий: окну MAX она уходит отдельным полем."""
+    text = f"📅 {e.title}\n{when_full_ru(e.starts_at)}"
+    if e.location:
+        text += f" · {e.location}"
+    return text + "\n\nПодробности и запись — в Кампусе:"
+
+
 def event_out(e: CalendarEvent, taken: int = 0, my_status: str | None = None) -> EventOut:
     return EventOut(
         id=e.id,
@@ -131,6 +156,8 @@ def event_out(e: CalendarEvent, taken: int = 0, my_status: str | None = None) ->
         registration_required=e.registration_required,
         my_status=my_status,
         details=e.details_json or {},
+        share_text=event_share_text(e),
+        share_link=app_link(f"event_{e.id}"),
     )
 
 

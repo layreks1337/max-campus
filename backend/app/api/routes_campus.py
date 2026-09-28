@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import io
 import logging
+import re
 from datetime import date, datetime, timedelta
 
 import qrcode
@@ -20,6 +21,7 @@ from sqlalchemy import func, or_, select
 from app.core.config import settings
 from app.core.dates import UNIVERSITY_TZ, local, when_full_ru
 from app.core.deps import BoundUserDep, SessionDep, StaffUserDep
+from app.core.limits import SlidingWindow
 from app.db.models import (
     REG_ATTENDED,
     REG_REGISTERED,
@@ -37,7 +39,8 @@ from app.db.models import (
     Student,
     utcnow,
 )
-from app.integrations.max.client import app_url_for, bot_username
+from app.api.serializers import app_link, event_share_text
+from app.integrations.max.client import bot_username
 from app.modules.demo.service import demo_filter, demo_student_ids, is_demo
 from app.modules.notify.service import enqueue
 
@@ -225,7 +228,8 @@ async def today(current: BoundUserDep, session: SessionDep) -> TodayOut:
     )
     for ev, reg in res.all():
         is_deadline = ev.kind == "DEADLINE"
-        if not is_deadline and reg != REG_REGISTERED:
+        # Прошедший по билету на событие — оно по-прежнему в его дне
+        if not is_deadline and reg not in (REG_REGISTERED, REG_ATTENDED):
             continue
         items.append(TodayItem(
             kind="deadline" if is_deadline else "event",
@@ -421,7 +425,17 @@ async def event_ticket(event_id: int, current: BoundUserDep, session: SessionDep
 
 
 class TicketCheckIn(BaseModel):
-    code: str = Field(min_length=3, max_length=40)
+    # До 512: сканер может вернуть не сам код, а ссылку с ним (…?startapp=ticket_T12-ABCDE)
+    code: str = Field(min_length=3, max_length=512)
+
+
+# Номер записи и 5 символов подписи base32 (A–Z, 2–7) — как в ticket_code()
+TICKET_RE = re.compile(r"T(\d{1,9})-([A-Z2-7]{5})(?![A-Z0-9])")
+
+# Подпись билета короткая (25 бит), чтобы её можно было продиктовать. Подбирать
+# её перебором не даём: 20 неверных подписей за 10 минут на сотрудника.
+# Неразобранный код не считается — сканер мог прочитать чужой QR.
+_bad_tickets = SlidingWindow(20, 600)
 
 
 class TicketCheckOut(BaseModel):
@@ -434,13 +448,21 @@ class TicketCheckOut(BaseModel):
 
 @router.post("/staff/tickets/check", response_model=TicketCheckOut, summary="Проверить билет на входе")
 async def check_ticket(body: TicketCheckIn, current: StaffUserDep, session: SessionDep) -> TicketCheckOut:
-    raw = body.code.strip().upper().replace(" ", "")
-    try:
-        num, sig = raw.removeprefix("T").split("-", 1)
-        reg_id = int(num)
-    except ValueError:
+    """Код с экрана студента или строка из сканера MAX (openCodeReader): принимается
+    сам код, ручной ввод с пробелом вместо дефиса и ссылка, в которой есть код."""
+    raw = re.sub(r"[\s\u2010-\u2015-]+", "-", body.code.strip().upper())
+    m = TICKET_RE.search(raw)
+    if m is None:
         raise HTTPException(400, detail={"code": "BAD_TICKET", "message": "Код билета не распознан"})
+    reg_id, sig = int(m.group(1)), m.group(2)
+    uid = current.app_user.id
+    if not _bad_tickets.allowed(uid):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "RATE_LIMITED", "message": "Слишком много неверных билетов. Попробуйте через 10 минут."},
+        )
     if not hmac.compare_digest(sig, _sign(reg_id)):
+        _bad_tickets.hit(uid)
         raise HTTPException(400, detail={"code": "BAD_TICKET", "message": "Билет недействителен"})
 
     res = await session.execute(
@@ -512,17 +534,6 @@ class ShareOut(BaseModel):
     link: str
 
 
-async def app_link(param: str) -> str:
-    """Ссылка, открывающая мини-приложение сразу на нужном экране."""
-    name = await bot_username()
-    if name:
-        return f"https://max.ru/{name}?startapp={param}"
-    # Имя бота не узнать (пусто в настройках и MAX недоступен) — ссылка на само
-    # приложение: браузер откроет тот же экран по WebAppStartParam
-    public_url = settings.MINIAPP_PUBLIC_URL.strip().rstrip("/")
-    return app_url_for(0, public_url, signed=False, start_param=param)
-
-
 @router.post("/events/{event_id}/share", response_model=ShareOut, summary="Поделиться событием")
 async def share_event(event_id: int, current: BoundUserDep, session: SessionDep) -> ShareOut:
     """Бот присылает карточку события в личный чат — дальше её пересылают
@@ -531,11 +542,8 @@ async def share_event(event_id: int, current: BoundUserDep, session: SessionDep)
     ev = await session.get(CalendarEvent, event_id)
     if ev is None:
         raise _not_found("Событие не найдено")
-    link = await app_link(f"event_{ev.id}")
-    text = f"📅 {ev.title}\n{when_full_ru(ev.starts_at)}"
-    if ev.location:
-        text += f" · {ev.location}"
-    text += f"\n\nПодробности и запись — в Кампусе:\n{link}"
+    link = app_link(f"event_{ev.id}", await bot_username())
+    text = f"{event_share_text(ev)}\n{link}"
     item = await enqueue(
         session,
         max_user_id=current.app_user.max_user_id,

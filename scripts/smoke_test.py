@@ -7,8 +7,9 @@
 Типовая справка (без оригинала и комментария) выдаётся автоматически в том же запросе.
 Плюс ассистент, календарь, возможности, матчинг, базовые проверки безопасности
 и демо-вход экспертов: своя копия студента, роль деканата в один тап, своя очередь.
-В конце — вход по подписанной ссылке из бота (?lt=…): секрет берётся из LINK_SECRET
+Вход по подписанной ссылке из бота (?lt=…): секрет берётся из LINK_SECRET
 или выводится из MAX_BOT_TOKEN — из окружения или из .env в корне репозитория.
+В конце — билет на входе: код из сканера MAX, ручной ввод, проход как конечное состояние.
 
 Запуск:  python scripts/smoke_test.py [http://127.0.0.1:8000]
 """
@@ -652,6 +653,57 @@ else:
 
     status, _ = call("GET", "/api/me", "not-a-token", scheme="MaxLink")
     check("мусор вместо токена ссылки — 401, а не 500", status == 401, f"получили {status}")
+
+section("16. Билет на входе: сканер MAX")
+# Демо-эксперт из раздела 14: студент со своей копией и роль деканата в один тап —
+# тот же путь, что у эксперта. Сканер камеры MAX (openCodeReader) возвращает
+# строку из QR; сервер принимает и сам код, и ссылку с ним, и ручной ввод
+# с пробелом вместо дефиса.
+status, devents = call("GET", "/api/events?days=60", DEMO_EXPERT)
+dlist = devents if isinstance(devents, list) else []
+first = next((e for e in dlist if e["registration_required"]), None)
+check("у события есть диплинк и текст для окна «Поделиться» MAX",
+      bool(first) and f"startapp=event_{first['id']}" in first.get("share_link", "")
+      and first["title"] in first.get("share_text", ""),
+      str(first)[:160])
+# Событие, где есть место: в лист ожидания билет не выдаётся
+target, dreg = None, None
+for ev in (e for e in dlist if e["registration_required"]):
+    status, dreg = call("POST", f"/api/events/{ev['id']}/register", DEMO_EXPERT)
+    if status == 200 and isinstance(dreg, dict) and dreg.get("my_status") in ("REGISTERED", "ATTENDED"):
+        target = ev
+        break
+check("демо-студент записан на событие", target is not None, str(dreg)[:160])
+if target:
+    taken_before = dreg.get("taken")
+    status, tk = call("GET", f"/api/events/{target['id']}/ticket", DEMO_EXPERT)
+    code = tk.get("code", "") if isinstance(tk, dict) else ""
+    check("билет выдан", status == 200 and code.startswith("T"), str(tk)[:120])
+    scanned = f"https://max.ru/t355_hakaton_max_bot?startapp=ticket_{code}"
+    status, res = call("POST", "/api/staff/tickets/check", DEMO_EXPERT, {"code": scanned})
+    check("из ссылки в QR код извлечён, проход отмечен",
+          status == 200 and isinstance(res, dict) and res.get("ok") is True, str(res)[:160])
+    status, tk2 = call("GET", f"/api/events/{target['id']}/ticket", DEMO_EXPERT)
+    check("билет студента показывает проход (ATTENDED)",
+          status == 200 and isinstance(tk2, dict) and tk2.get("status") == "ATTENDED", str(tk2)[:120])
+    status, res = call("POST", "/api/staff/tickets/check", DEMO_EXPERT,
+                       {"code": code.lower().replace("-", " ")})
+    check("ручной ввод «t12 abcde» распознан, повторный проход помечен",
+          status == 200 and isinstance(res, dict) and res.get("already") is True, str(res)[:160])
+    forged = code[:-1] + ("A" if code[-1] != "A" else "B")
+    status, res = call("POST", "/api/staff/tickets/check", DEMO_EXPERT, {"code": forged})
+    check("код с чужой подписью — «Билет недействителен» (400)",
+          status == 400 and isinstance(res, dict) and "недействителен" in str(res), f"{status} {str(res)[:120]}")
+    status, res = call("POST", "/api/staff/tickets/check", DEMO_EXPERT, {"code": "https://example.com/"})
+    check("чужой QR без кода — 400, а не 500", status == 400, f"получили {status}")
+    status, again = call("POST", f"/api/events/{target['id']}/register", DEMO_EXPERT)
+    check("повторная запись не стирает отметку о проходе",
+          status == 200 and isinstance(again, dict) and again.get("my_status") == "ATTENDED", str(again)[:160])
+    check("прошедший по билету место не освобождает",
+          isinstance(again, dict) and again.get("taken") == taken_before,
+          f"занято до прохода {taken_before}, после {again.get('taken') if isinstance(again, dict) else again}")
+    status, res = call("DELETE", f"/api/events/{target['id']}/register", DEMO_EXPERT)
+    check("после прохода запись не отменяется (409)", status == 409, f"получили {status}")
 
 section("ИТОГ")
 print(f"  успешно: {passed}")

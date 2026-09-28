@@ -194,6 +194,9 @@ class EventOut(BaseModel):
     registration_required: bool
     my_status: str | None = None
     details: dict = {}
+    # Для окна «Поделиться» MAX (shareMaxContent): текст карточки и диплинк на событие
+    share_text: str = ""
+    share_link: str = ""
 
 
 class EventCreateIn(BaseModel):

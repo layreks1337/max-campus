@@ -141,6 +141,9 @@ export interface CampusEvent {
   registration_required: boolean;
   my_status: string | null;
   details: Details;
+  /** Для окна «Поделиться» MAX: текст карточки и диплинк max.ru/<бот>?startapp=event_<id> */
+  share_text: string;
+  share_link: string;
 }
 
 /** Практика: куда прийти, что взять, как участвовать, к кому обращаться. */

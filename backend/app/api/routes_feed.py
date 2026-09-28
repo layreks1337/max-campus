@@ -33,6 +33,7 @@ from app.core.deps import (
 from app.db.models import (
     MOD_APPROVED,
     MOD_PENDING,
+    REG_ATTENDED,
     REG_CANCELLED,
     REG_REGISTERED,
     REG_WAITLIST,
@@ -48,6 +49,10 @@ from app.modules.match.service import audience_matches
 from app.modules.notify.service import enqueue
 
 log = logging.getLogger("api.feed")
+
+# Кто занимает место: записавшиеся и уже прошедшие по билету
+SEAT_STATUSES = (REG_REGISTERED, REG_ATTENDED)
+
 events_router = APIRouter(prefix="/events", tags=["events"])
 opps_router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -82,7 +87,9 @@ async def list_events(
     res = await session.execute(
         select(EventRegistration.event_id, func.count(EventRegistration.id))
         .where(
-            EventRegistration.event_id.in_(ids), EventRegistration.status == REG_REGISTERED
+            EventRegistration.event_id.in_(ids),
+            # Отмеченный на входе место не освобождает
+            EventRegistration.status.in_(SEAT_STATUSES),
         )
         .group_by(EventRegistration.event_id)
     )
@@ -126,13 +133,15 @@ async def register_event(
     )
     reg = res.scalar_one_or_none()
 
-    if reg is not None and reg.status in (REG_REGISTERED, REG_WAITLIST):
+    # Уже записан или уже прошёл по билету — повторная запись ничего не меняет.
+    # Без REG_ATTENDED здесь отметка о проходе затиралась обратно в REGISTERED.
+    if reg is not None and reg.status in (REG_REGISTERED, REG_WAITLIST, REG_ATTENDED):
         return await _event_payload(session, event, current.student.id)
 
     res = await session.execute(
         select(func.count(EventRegistration.id)).where(
             EventRegistration.event_id == event_id,
-            EventRegistration.status == REG_REGISTERED,
+            EventRegistration.status.in_(SEAT_STATUSES),
         )
     )
     taken = res.scalar() or 0
@@ -183,6 +192,10 @@ async def unregister_event(
     event = await session.get(CalendarEvent, event_id)
     if reg is None or event is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Запись не найдена"})
+    if reg.status == REG_ATTENDED:
+        raise HTTPException(
+            status_code=409, detail={"code": "ATTENDED", "message": "Проход уже отмечен — запись не отменить"}
+        )
 
     was_registered = reg.status == REG_REGISTERED
     reg.status = REG_CANCELLED
@@ -251,7 +264,7 @@ async def _event_payload(session, event: CalendarEvent, student_id: int) -> Even
     res = await session.execute(
         select(func.count(EventRegistration.id)).where(
             EventRegistration.event_id == event.id,
-            EventRegistration.status == REG_REGISTERED,
+            EventRegistration.status.in_(SEAT_STATUSES),
         )
     )
     taken = res.scalar() or 0

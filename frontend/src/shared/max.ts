@@ -1,9 +1,11 @@
 /**
  * Обёртка над MAX Bridge.
  *
- * Вне мессенджера объекта window.WebApp нет, поэтому здесь же живёт заглушка:
- * без неё приложение невозможно открыть в обычном браузере, а гонять каждую
- * правку в мессенджер — потерянный день разработки.
+ * Вне мессенджера скрипт Bridge всё равно создаёт window.WebApp, но с пустым
+ * initData, platform = null и без транспорта: вызовы молча теряются. Поэтому
+ * «мы в MAX» — это непустой initData (isInsideMax), а не наличие объекта.
+ * Здесь же живёт заглушка входа: без неё приложение невозможно открыть
+ * в обычном браузере, а гонять каждую правку в мессенджер — потерянный день.
  *
  * Заглушка отдаёт dev-токен вида `dev:<id>:<Name>`, который бэкенд принимает
  * при ALLOW_DEV_AUTH=true. Имя — латиницей: токен уезжает в HTTP-заголовок,
@@ -32,22 +34,52 @@ interface MaxBackButton {
   offClick: (cb: () => void) => void;
 }
 
+/** Ошибка Bridge: промис отклоняется объектом `{ error: { code } }`.
+ *  Таймаут библиотеки — `client.<метод>.request_timeout`,
+ *  метод, которого нет в клиенте (веб-версия) — `client.unsupported_method.unsupported_method`. */
+export interface MaxBridgeError {
+  error?: { code?: string };
+}
+
+type ImpactStyle = "soft" | "light" | "medium" | "heavy" | "rigid";
+type NoticeType = "success" | "warning" | "error";
+
+interface MaxHapticFeedback {
+  impactOccurred: (style: ImpactStyle, disableVibrationFallback?: boolean) => Promise<unknown>;
+  notificationOccurred: (type: NoticeType, disableVibrationFallback?: boolean) => Promise<unknown>;
+  selectionChanged: (disableVibrationFallback?: boolean) => Promise<unknown>;
+}
+
 interface MaxWebApp {
-  initData?: string;
+  initData?: string | null;
   initDataUnsafe?: MaxInitDataUnsafe;
   ready?: () => void;
   close?: () => void;
   expand?: () => void;
   openLink?: (url: string) => void;
+  openMaxLink?: (url: string) => void;
   BackButton?: MaxBackButton;
+  HapticFeedback?: MaxHapticFeedback;
   colorScheme?: "light" | "dark";
-  platform?: string;
-  version?: string;
+  /** ios | android | desktop | web; вне MAX — null. В подпись initData не входит. */
+  platform?: string | null;
+  version?: string | null;
+  openCodeReader?: (fileSelect?: boolean) => Promise<{ value?: string }>;
+  requestScreenMaxBrightness?: () => Promise<{ maxBrightness?: boolean }>;
+  restoreScreenBrightness?: () => Promise<{ maxBrightness?: boolean }>;
+  shareMaxContent?: (
+    p: { text?: string; link?: string } | { mid: string; chatType: "DIALOG" | "CHAT" },
+  ) => Promise<{ status?: "shared" | "cancelled" }>;
+  downloadFile?: (url: string, fileName: string) => Promise<{ status?: "downloading" | "cancelled" }>;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
 }
 
 declare global {
   interface Window {
     WebApp?: MaxWebApp;
+    /** Эмулятор клиента для проверки без телефона (shared/max-emulator.ts). */
+    __campusMaxEmu?: MaxPlatform;
   }
 }
 
@@ -65,6 +97,11 @@ export const isTestUserId = (id: number): boolean =>
 /** Есть ли настоящий Bridge. */
 export const isInsideMax = (): boolean =>
   typeof window !== "undefined" && !!window.WebApp?.initData;
+
+/** Есть ли кому отвечать на вызовы Bridge: запуск в MAX или эмулятор.
+ *  Вне MAX скрипт Bridge тоже создаёт window.WebApp, но без транспорта:
+ *  вызовы уходят в никуда, а промисы отклоняются только по таймауту. */
+const hasBridge = (): boolean => isInsideMax() || !!window.__campusMaxEmu;
 
 /** Случайные id для браузеров начинаются выше фиксированных тестовых
  *  (900001–900999: смоук-тест и быстрые кнопки в профиле). */
@@ -223,6 +260,9 @@ export function closeApp(): boolean {
   }
 }
 
+/** Внешняя ссылка. Проверка — hasBridge(), а не наличие openLink: скрипт Bridge
+ *  создаёт window.WebApp и в обычном браузере (в том числе при входе по ссылке
+ *  из бота), но без транспорта openLink молча ничего не делает. */
 export function openExternal(url: string): void {
   // Только веб-ссылки: `javascript:` и прочие схемы из данных не открываем
   let href: string;
@@ -233,11 +273,136 @@ export function openExternal(url: string): void {
   } catch {
     return;
   }
-  // Скрипт MAX Bridge создаёт WebApp.openLink и в обычном браузере, но там
-  // вызов теряется («транспорт недоступен»): кнопки «Открыть PDF», «Маршрут»,
-  // «В календарь» молчали. Вне MAX открываем сами.
-  if (isInsideMax() && window.WebApp?.openLink) window.WebApp.openLink(href);
+  if (hasBridge() && window.WebApp?.openLink) window.WebApp.openLink(href);
   else window.open(href, "_blank", "noopener");
+}
+
+/* ── Возможности устройства ─────────────────────────────────────────
+ *
+ * Поддержка по платформам (документация dev.max.ru/docs/webapps/bridge и код
+ * web.max.ru на 28.09.2026):
+ *   openCodeReader, HapticFeedback, requestScreenMaxBrightness — только телефоны;
+ *     веб-клиент отвечает client.unsupported_method.unsupported_method,
+ *     поддержка в десктопном клиенте не описана.
+ *   shareMaxContent, downloadFile — телефоны и веб (в вебе — своё окно MAX).
+ *
+ * Правило: вызываем метод, только если platform его поддерживает, и никогда не
+ * бросаем исключений наружу — каждый вызов возвращает понятный результат. */
+
+export type MaxPlatform = "ios" | "android" | "desktop" | "web";
+
+export function maxPlatform(): MaxPlatform | null {
+  if (!hasBridge()) return null;
+  const p = window.WebApp?.platform;
+  return p === "ios" || p === "android" || p === "desktop" || p === "web" ? p : null;
+}
+
+/** Платформа встроенного эмулятора клиента (?maxEmu=…) — для метки на экране:
+ *  всё, что он показывает, смоделировано. В самом MAX всегда null. */
+export const emulatedPlatform = (): MaxPlatform | null =>
+  isInsideMax() ? null : (window.__campusMaxEmu ?? null);
+
+/** Мобильный клиент MAX: камера, вибрация, яркость. */
+export const isMobileMax = (): boolean => {
+  const p = maxPlatform();
+  return p === "ios" || p === "android";
+};
+
+const bridgeCode = (e: unknown): string =>
+  String((e as MaxBridgeError | undefined)?.error?.code ?? "");
+
+/** Сканер QR камерой MAX. Библиотека ждёт ответа клиента до 10 минут,
+ *  поэтому вызывающий код не блокирует интерфейс на время сканирования. */
+export const canScanQr = (): boolean =>
+  isMobileMax() && typeof window.WebApp?.openCodeReader === "function";
+
+export type ScanResult =
+  | { kind: "ok"; value: string }
+  | { kind: "cancelled" }
+  | { kind: "unsupported" }
+  | { kind: "error"; code: string };
+
+export async function scanQr(): Promise<ScanResult> {
+  const app = window.WebApp;
+  if (!canScanQr() || !app?.openCodeReader) return { kind: "unsupported" };
+  try {
+    // true — камера плюс выбор снимка из галереи: так билет можно проверить
+    // и с одного телефона, по скриншоту
+    const res = await app.openCodeReader(true);
+    const value = String(res?.value ?? "").trim();
+    return value ? { kind: "ok", value } : { kind: "cancelled" };
+  } catch (e) {
+    const code = bridgeCode(e);
+    if (code.includes("unsupported")) return { kind: "unsupported" };
+    if (code.includes("cancel")) return { kind: "cancelled" };
+    return { kind: "error", code };
+  }
+}
+
+/** Тактильный отклик. В MAX на телефоне — HapticFeedback (работает и на iOS,
+ *  где navigator.vibrate нет); в вебе и на десктопе MAX его не поддерживает. */
+function vibrate(pattern: number | number[]): void {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* не везде поддерживается */
+  }
+}
+
+const mobileHaptics = (): MaxHapticFeedback | null =>
+  isMobileMax() ? (window.WebApp?.HapticFeedback ?? null) : null;
+
+export const haptics = {
+  impact(style: ImpactStyle = "light"): void {
+    const hf = mobileHaptics();
+    if (hf) void hf.impactOccurred(style).catch(() => {});
+    else if (!hasBridge()) vibrate(8);
+  },
+  notify(type: NoticeType): void {
+    const hf = mobileHaptics();
+    if (hf) void hf.notificationOccurred(type).catch(() => {});
+    else if (!hasBridge()) vibrate(type === "success" ? 12 : type === "warning" ? [10, 60, 10] : [20, 40, 20, 40, 20]);
+  },
+  selection(): void {
+    const hf = mobileHaptics();
+    if (hf) void hf.selectionChanged().catch(() => {});
+  },
+};
+
+/** Максимальная яркость на время показа QR-билета. MAX сам вернёт прежнюю
+ *  через 30 секунд, restoreBrightness — чтобы не ждать. */
+export async function boostBrightness(): Promise<boolean> {
+  const app = window.WebApp;
+  if (!isMobileMax() || !app?.requestScreenMaxBrightness) return false;
+  try {
+    return !!(await app.requestScreenMaxBrightness())?.maxBrightness;
+  } catch {
+    return false;
+  }
+}
+
+export function restoreBrightness(): void {
+  const app = window.WebApp;
+  if (!isMobileMax() || !app?.restoreScreenBrightness) return;
+  void app.restoreScreenBrightness().catch(() => {});
+}
+
+export type ShareResult = "shared" | "cancelled" | "unavailable" | "error";
+
+/** Окно «Поделиться» самого MAX: пользователь выбирает чат группы, сообщение
+ *  уходит от его имени. MAX открывает окно только в ответ на клик, поэтому
+ *  вызывать синхронно в обработчике нажатия, до любого await.
+ *  Десктопный клиент — не описан в документации: там сразу «unavailable». */
+export function shareInMax(p: { text: string; link?: string }): Promise<ShareResult> {
+  const app = window.WebApp;
+  const platform = maxPlatform();
+  if (!app?.shareMaxContent || platform === null || platform === "desktop") {
+    return Promise.resolve("unavailable");
+  }
+  return app
+    .shareMaxContent(p)
+    .then((r): ShareResult => (r?.status === "shared" ? "shared" : "cancelled"))
+    .catch((e): ShareResult => (bridgeCode(e).includes("unsupported") ? "unavailable" : "error"));
 }
 
 /** Формат стартового параметра по документации MAX: латиница, цифры, «_» и «-». */

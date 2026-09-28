@@ -44,7 +44,16 @@ import { Chip } from "@/components/ui/primitives";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
-import { openExternal, setBackButton } from "@/shared/max";
+import {
+  boostBrightness,
+  emulatedPlatform,
+  haptics,
+  isMobileMax,
+  openExternal,
+  restoreBrightness,
+  setBackButton,
+  shareInMax,
+} from "@/shared/max";
 import type { CampusEvent, Details, Opportunity, Ticket } from "@/shared/types";
 import {
   cn,
@@ -505,6 +514,11 @@ function Poster({
               <Check size={12} /> Иду
             </Chip>
           )}
+          {item.kind === "event" && item.event.my_status === "ATTENDED" && (
+            <Chip tone="overlay">
+              <Check size={12} /> Проход отмечен
+            </Chip>
+          )}
         </div>
 
         <div className="absolute inset-x-0 bottom-0 p-4">
@@ -758,8 +772,10 @@ function Body({
     if (e.location) rows.push({ icon: <MapPin size={16} />, text: e.location });
     if (e.organizer_name) rows.push({ icon: <Users size={16} />, text: e.organizer_name });
 
+    const attended = e.my_status === "ATTENDED";
     const registered = e.my_status === "REGISTERED" || e.my_status === "WAITLIST";
     const toggle = async () => {
+      if (attended) return; // проход отмечен — запись больше не меняется
       setBusy(true);
       try {
         const updated = registered ? await api.unregisterEvent(e.id) : await api.registerEvent(e.id);
@@ -777,12 +793,14 @@ function Body({
         Подать заявление <ArrowRight size={18} />
       </ActionButton>
     ) : e.registration_required ? (
-      <ActionButton onClick={toggle} busy={busy} done={registered}>
-        {registered
-          ? e.my_status === "WAITLIST"
-            ? "Вы в листе ожидания · отменить"
-            : "Вы записаны · отменить"
-          : "Записаться"}
+      <ActionButton onClick={toggle} busy={busy} done={registered || attended} disabled={attended}>
+        {attended
+          ? "Проход отмечен" /* галочку рисует сама кнопка (done) */
+          : registered
+            ? e.my_status === "WAITLIST"
+              ? "Вы в листе ожидания · отменить"
+              : "Вы записаны · отменить"
+            : "Записаться"}
       </ActionButton>
     ) : (
       <p className="rounded-[16px] bg-surface-raised px-4 py-3 text-center text-[14px] text-muted">
@@ -901,7 +919,15 @@ function Body({
       <motion.div {...stagger(rows.length + 1)} className="mb-6">
         {action}
         {item.kind === "event" && item.event.kind !== "DEADLINE" && (
-          <EventExtras event={item.event} onError={onError} />
+          <EventExtras
+            event={item.event}
+            onError={onError}
+            // Билет отсканировали на входе — карточка тоже показывает проход,
+            // иначе кнопка «Вы записаны · отменить» осталась бы до перезагрузки
+            onAttended={() =>
+              item.kind === "event" && onChange({ ...item, event: { ...item.event, my_status: "ATTENDED" } })
+            }
+          />
         )}
       </motion.div>
 
@@ -971,20 +997,28 @@ function ActionButton({
 
 /* ── Поделиться, календарь, билет ──────────────────────────────── */
 
-function EventExtras({ event, onError }: { event: CampusEvent; onError: (m: string) => void }) {
+function EventExtras({
+  event,
+  onError,
+  onAttended,
+}: {
+  event: CampusEvent;
+  onError: (m: string) => void;
+  onAttended: () => void;
+}) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [note, setNote] = useState("");
   const registered = event.my_status === "REGISTERED" || event.my_status === "ATTENDED";
 
-  const share = async () => {
-    haptic();
+  // Запасной путь: бот присылает карточку в личку (её пересылают в чат группы),
+  // вне MAX — системное меню или буфер обмена
+  const shareViaBot = async () => {
     try {
       const res = await api.shareEvent(event.id);
       if (res.sent_to_chat) {
         setNote("Карточка пришла в чат с ботом — перешлите её в чат группы.");
         return;
       }
-      // Вне мессенджера (или тестовый аккаунт) — системное меню «Поделиться»
       if (navigator.share) {
         await navigator.share({ title: event.title, text: res.text });
       } else {
@@ -997,6 +1031,25 @@ function EventExtras({ event, onError }: { event: CampusEvent; onError: (m: stri
     }
   };
 
+  // Окно «Поделиться» MAX открывается только по клику — вызов синхронный,
+  // без await перед ним
+  const share = () => {
+    haptic();
+    if (!event.share_link) return void shareViaBot();
+    void shareInMax({ text: event.share_text, link: event.share_link }).then((r) => {
+      if (r === "shared") {
+        haptics.notify("success");
+        setNote(
+          emulatedPlatform()
+            ? "Эмулятор MAX: здесь сообщение ушло бы в выбранный чат. По ссылке событие откроется прямо в Кампусе."
+            : "Отправлено. По ссылке событие откроется прямо в Кампусе.",
+        );
+      } else if (r !== "cancelled") {
+        void shareViaBot();
+      }
+    });
+  };
+
   const openTicket = async () => {
     try {
       setTicket(await api.ticket(event.id));
@@ -1005,6 +1058,34 @@ function EventExtras({ event, onError }: { event: CampusEvent; onError: (m: stri
       onError(e instanceof ApiException ? e.message : "Билет не загрузился");
     }
   };
+
+  // Пока билет открыт и не отмечен — раз в 3 секунды спрашиваем статус:
+  // студент видит «Проход отмечен» не позже чем через 3 секунды после сканирования
+  const waiting = ticket !== null && ticket.status !== "ATTENDED";
+  const onAttendedRef = useRef(onAttended);
+  onAttendedRef.current = onAttended;
+  useEffect(() => {
+    if (!waiting) return;
+    let alive = true;
+    let left = 100; // не дольше 5 минут
+    const timer = setInterval(async () => {
+      if (--left < 0) return clearInterval(timer);
+      try {
+        const fresh = await api.ticket(event.id);
+        if (alive && fresh.status === "ATTENDED") {
+          haptics.notify("success");
+          setTicket(fresh);
+          onAttendedRef.current();
+        }
+      } catch {
+        /* сеть моргнула — спросим в следующий раз */
+      }
+    }, 3000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [waiting, event.id]);
 
   return (
     <>
@@ -1076,6 +1157,19 @@ function ExtraButton({
 /** Билет с QR: код проверяет организатор на входе (экран «Деканат»). */
 function TicketView({ ticket }: { ticket: Ticket }) {
   const used = ticket.status === "ATTENDED";
+  const [bright, setBright] = useState(false);
+
+  // Максимальная яркость, чтобы сканер на входе прочитал код с первого раза.
+  // MAX держит её 30 секунд; нажатие на код включает снова
+  const boost = useCallback(() => {
+    void boostBrightness().then(setBright);
+  }, []);
+  useEffect(() => {
+    if (used) return;
+    boost();
+    return () => restoreBrightness();
+  }, [used, boost]);
+
   return (
     <motion.div
       initial={{ rotateX: -25, opacity: 0, y: 20 }}
@@ -1099,11 +1193,15 @@ function TicketView({ ticket }: { ticket: Ticket }) {
       </div>
       <div className="px-6 pt-5 pb-6 text-center">
         <div
+          onClick={() => !used && isMobileMax() && boost()}
           className={cn("mx-auto w-[200px] [&_svg]:h-auto [&_svg]:w-full", used && "opacity-25")}
           dangerouslySetInnerHTML={{ __html: ticket.qr_svg }}
         />
         <p className="mt-3 font-mono text-[20px] font-bold tracking-[0.12em]">{ticket.code}</p>
         <p className="mt-1 text-[13px] text-black/55">{ticket.holder}</p>
+        {bright && !used && (
+          <p className="mt-2 text-[12px] text-black/40">Яркость на максимуме · коснитесь кода, если экран потемнел</p>
+        )}
         {used && <p className="mt-3 text-[14px] font-semibold text-[#1f9d55]">✓ Проход отмечен</p>}
       </div>
     </motion.div>

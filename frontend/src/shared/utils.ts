@@ -1,5 +1,7 @@
 /** Мелкие помощники: классы, даты, статусы. */
 
+import { haptics } from "@/shared/max";
+
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
@@ -196,10 +198,25 @@ export function payloadRows(request: {
     }));
 }
 
+/** Лёгкий отклик на нажатие. В MAX на телефоне — нативный HapticFeedback,
+ *  в браузере — navigator.vibrate (на iOS его нет). */
 export function haptic(): void {
-  try {
-    navigator.vibrate?.(8);
-  } catch {
-    /* не везде поддерживается */
-  }
+  haptics.impact("light");
+}
+
+/** Кириллица, похожая на латиницу: код билета диктуют и набирают на русской раскладке. */
+const LOOKALIKE: Record<string, string> = {
+  А: "A", В: "B", Е: "E", К: "K", М: "M", Н: "H", О: "O", Р: "P", С: "C", Т: "T", Х: "X", У: "Y",
+};
+
+/** Код билета из того, что ввели или прочитал сканер: «T12-ABCDE», «т12 abcde»,
+ *  или ссылка с ним (…?startapp=ticket_T12-ABCDE). Подпись — 5 символов base32
+ *  (A–Z, 2–7), как в backend/app/api/routes_campus.py → ticket_code(). */
+export function parseTicketCode(raw: string): string | null {
+  const s = raw
+    .toUpperCase()
+    .replace(/[\u0400-\u04FF]/g, (ch) => LOOKALIKE[ch] ?? ch)
+    .replace(/[\s\u2010-\u2015-]+/g, "-"); // «T12 ABCDE», «T12 – ABCDE» → T12-ABCDE
+  const m = s.match(/T(\d{1,9})-([A-Z2-7]{5})(?![A-Z0-9])/);
+  return m ? `T${m[1]}-${m[2]}` : null;
 }

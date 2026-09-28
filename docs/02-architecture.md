@@ -15,7 +15,7 @@
 > | S3/MinIO | Том `/data` контейнера |
 > | WeasyPrint | fpdf2 + шрифт PT Sans: чистый Python, без системных библиотек (шапка `modules/requests/pdf.py`) |
 > | Модули `routes/service/repo`, дерево проекта ниже | Роуты в `api/`, логика в `modules/*/` (requests, assistant, match, feed, notify, demo); модулей binding, calendar, matching, `workers/outbox.py`, `reminders.py`, `alembic/` нет — актуальное дерево в README |
-> | Тесты `tests/` | pytest-тестов нет: сквозной `scripts/smoke_test.py` (85 проверок) и регрессия ассистента `scripts/test_assistant.py` против поднятого сервиса |
+> | Тесты `tests/` | pytest-тестов нет: сквозной `scripts/smoke_test.py` (96 проверок) и регрессия ассистента `scripts/test_assistant.py` против поднятого сервиса |
 > | Запасные эмбеддинги e5 по `EMBEDDING_PROVIDER` | Не реализованы: только Yandex, вектор 256 (решения 018, 021); переменная удалена |
 > | Время по Иркутску в коде | `UNIVERSITY_TZ_HOURS` и `UNIVERSITY_NAME` в настройках (решение 066) |
 > | SDK `openai` (`AsyncOpenAI`) | Свой клиент на `httpx` к тому же OpenAI-совместимому эндпоинту (`modules/assistant/llm.py`); пакет `openai` не импортируется |

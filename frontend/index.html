@@ -11,8 +11,9 @@
          отдают полный адрес чужим сайтам в Referer — оставляем им только домен. -->
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>Кампус</title>
-    <!-- Bridge мессенджера MAX. Вне MAX объект window.WebApp не появится —
-         приложение это переживает и уходит в режим разработки (см. src/shared/max.ts). -->
+    <!-- Bridge мессенджера MAX. Вне MAX window.WebApp тоже появится, но с пустым
+         initData и без транспорта — приложение уходит в режим разработки
+         (см. src/shared/max.ts). -->
     <script src="https://st.max.ru/js/max-web-app.js"></script>
   </head>
   <body>

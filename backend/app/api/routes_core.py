@@ -28,6 +28,7 @@ from app.core.limits import SlidingWindow, client_ip
 from app.db.models import (
     ACTIVE_STATUSES,
     MOD_APPROVED,
+    REG_ATTENDED,
     REG_REGISTERED,
     Binding,
     BindingCode,
@@ -356,7 +357,7 @@ async def home(current: BoundUserDep, session: SessionDep) -> HomeOut:
             select(EventRegistration.event_id, func.count(EventRegistration.id))
             .where(
                 EventRegistration.event_id.in_(ids),
-                EventRegistration.status == REG_REGISTERED,
+                EventRegistration.status.in_((REG_REGISTERED, REG_ATTENDED)),
             )
             .group_by(EventRegistration.event_id)
         )

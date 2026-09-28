@@ -265,6 +265,15 @@ def clean_start_param(payload: str | None) -> str | None:
     return payload
 
 
+def known_bot_username() -> str:
+    """Имя бота без сетевого запроса: из настроек или уже узнанное через /me.
+
+    Для диплинков в выдаче событий (кнопка «Поделиться» окном MAX): ради
+    списка событий в MAX не ходим. Пусто — вызывающий строит ссылку на само
+    приложение."""
+    return _bot_username or settings.MAX_BOT_USERNAME.strip().lstrip("@")
+
+
 async def bot_username() -> str:
     """Имя бота, к которому привязано мини-приложение (поле web_app кнопки open_app).
 

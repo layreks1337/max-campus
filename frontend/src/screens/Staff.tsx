@@ -5,8 +5,8 @@
  *  и есть главный аргумент продукта. */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Inbox, Lock, ScanLine, Send } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Camera, Inbox, Lock, ScanLine, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { RequestCard } from "@/components/cards";
@@ -17,7 +17,8 @@ import { Card, CardSkeleton, Chip, Divider, Empty } from "@/components/ui/primit
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import type { CampusRequest, Me, TicketCheck } from "@/shared/types";
-import { cn, dateTimeRu, haptic, payloadRows, STATUS_TITLES } from "@/shared/utils";
+import { canScanQr, haptics, maxPlatform, scanQr } from "@/shared/max";
+import { cn, dateTimeRu, parseTicketCode, payloadRows, STATUS_TITLES } from "@/shared/utils";
 
 const FILTERS = [
   { key: "", label: "Все в работе" },
@@ -52,7 +53,8 @@ function StaffLocked({ me, onChange }: { me: Me; onChange: (me: Me) => void }) {
         <p className="mb-5 text-[14px] leading-relaxed text-muted">
           Здесь очередь заявок: сотрудник принимает заявку, передаёт на подпись и выдаёт
           документ, а студент получает его файлом в чат. Типовые справки выдаются
-          автоматически и в очередь не попадают.
+          автоматически и в очередь не попадают. Здесь же — проверка билетов на входе
+          на события: камерой MAX или по коду.
         </p>
         {demo ? (
           <>
@@ -325,26 +327,54 @@ function StaffSheet({
   );
 }
 
-/** Проверка билета на входе: код с экрана студента — отметка о проходе. */
+/** Проверка билета на входе. В мобильном MAX — камерой (openCodeReader),
+ *  в веб- и десктоп-версии и в браузере — вводом кода: сканера там нет. */
 function TicketChecker() {
   const [code, setCode] = useState("");
   const [result, setResult] = useState<TicketCheck | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Если клиент ответит «метод не поддерживается», кнопка пропадёт до перезапуска
+  const [scanner, setScanner] = useState(canScanQr);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const check = async () => {
+  const check = async (raw: string, via: "scan" | "manual") => {
+    const parsed = parseTicketCode(raw);
+    setResult(null);
+    if (!parsed) {
+      setError(via === "scan" ? "Это не билет Кампуса" : "Код не распознан — нужен вид T12-ABCDE");
+      haptics.notify("error");
+      return;
+    }
     setBusy(true);
     setError("");
-    setResult(null);
     try {
-      setResult(await api.checkTicket(code));
+      const r = await api.checkTicket(parsed);
+      setResult(r);
       setCode("");
-      haptic();
+      haptics.notify(r.already ? "warning" : "success");
     } catch (e) {
       setError(e instanceof ApiException ? e.message : "Не удалось проверить билет");
+      haptics.notify("error");
     } finally {
       setBusy(false);
     }
+  };
+
+  // Интерфейс не блокируем, пока открыт сканер: если клиент не ответит,
+  // библиотека ждёт до 10 минут, а кнопка должна оставаться живой
+  const scan = async () => {
+    const res = await scanQr();
+    if (res.kind === "ok") return check(res.value, "scan");
+    if (res.kind === "cancelled") return;
+    if (res.kind === "unsupported") {
+      setScanner(false);
+      setError("Сканер недоступен в этой версии MAX — введите код с билета");
+    } else {
+      setError("Не удалось отсканировать — попробуйте ещё раз или введите код");
+    }
+    haptics.notify("error");
+    inputRef.current?.focus();
   };
 
   return (
@@ -352,25 +382,47 @@ function TicketChecker() {
       <p className="mb-3 flex items-center gap-2 px-1 text-[15px] font-semibold text-ink">
         <ScanLine size={18} className="text-accent" /> Проверка билетов
       </p>
+      {scanner && (
+        <>
+          <Button full onClick={() => void scan()} loading={busy}>
+            <Camera size={17} /> {result ? "Сканировать следующий" : "Сканировать QR"}
+          </Button>
+          <p className="my-2 text-center text-[12px] text-faint">или введите код вручную</p>
+        </>
+      )}
       <div className="flex gap-2">
         <input
+          ref={inputRef}
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
-          onKeyDown={(e) => e.key === "Enter" && code.length > 3 && void check()}
+          onKeyDown={(e) => e.key === "Enter" && code.length > 3 && void check(code, "manual")}
           placeholder="Код, например T12-ABCDE"
           className="min-w-0 flex-1 rounded-[14px] bg-field px-4 py-3 font-mono text-[15px] text-ink outline-none placeholder:font-sans placeholder:text-faint"
         />
-        <Button onClick={check} disabled={code.length < 4} loading={busy}>
+        <Button
+          variant={scanner ? "soft" : "primary"}
+          onClick={() => void check(code, "manual")}
+          disabled={code.length < 4}
+          loading={busy && !scanner}
+        >
           Отметить
         </Button>
       </div>
+      {!scanner && (
+        <p className="mt-2 px-1 text-[12px] leading-snug text-faint">
+          {maxPlatform() === null
+            ? "В мобильном приложении MAX билет сканируется камерой, здесь — по коду с билета"
+            : "Сканер камерой — в мобильном приложении MAX, здесь — по коду с билета"}
+        </p>
+      )}
       <AnimatePresence mode="popLayout">
         {(result || error) && (
           <motion.div
-            key={result ? `ok-${result.holder}` : `err-${error}`}
+            key={result ? `ok-${result.holder}-${result.already}` : `err-${error}`}
             initial={{ opacity: 0, y: -8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0 }}
+            role="status"
             className={cn(
               "mt-3 rounded-[14px] px-4 py-3 text-[14px] leading-snug",
               error ? "bg-danger/10 text-danger" : result?.already ? "bg-warn/10 text-warn" : "bg-ok/10 text-ok",
