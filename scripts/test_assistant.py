@@ -84,6 +84,12 @@ CASES: list[tuple[str, str | None, list[str], list[str]]] = [
     ),
 ]
 
+# Вопросы, после которых под ответом обязана быть кнопка к форме этого шаблона:
+# ассистент пишет «нажми на кнопку ниже», и без кнопки ответ — обман
+EXPECT_FORM_BUTTON = {
+    "Хочу оформить справку в военкомат": "military_certificate",
+}
+
 FORBIDDEN_ALWAYS = [
     "get_my_requests", "list_opportunities", "escalate_to_human", "list_events",
     "tool_call", "function", "{\"", "```json",
@@ -182,6 +188,18 @@ for question, expect_tool, must_have, must_not in CASES:
         if token.lower() in low:
             print(f"   ✗ присутствует нежелательное: «{token}»")
             ok = False
+
+    form_key = EXPECT_FORM_BUTTON.get(question)
+    if form_key and not any(
+        a.get("type") == "open_request_form" and a.get("template_key") == form_key for a in actions
+    ):
+        print(f"   ✗ нет кнопки к форме {form_key}")
+        ok = False
+
+    titles = [s.get("title") for s in sources]
+    if len(titles) != len(set(titles)):
+        print("   ✗ один и тот же источник показан дважды")
+        ok = False
 
     if expect_tool and expect_tool not in tools:
         # не проваливаем: выбор инструмента вероятностный, но фиксируем

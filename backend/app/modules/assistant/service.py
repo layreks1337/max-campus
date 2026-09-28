@@ -172,10 +172,16 @@ def _relevant_sources(answer: str, sources: list[dict]) -> list[dict]:
         return []
 
     kept: list[dict] = []
+    titles: set[str] = set()
     for src in sources:
+        # Несколько фрагментов одного документа — один источник, а не два
+        # одинаковых заголовка подряд
+        if src.get("title") in titles:
+            continue
         snippet_words = {w for w in re.findall(r"[а-яёa-z]{6,}", src.get("snippet", "").lower())}
         if len(answer_words & snippet_words) >= 3:
             kept.append(src)
+            titles.add(src.get("title"))
     return kept[:3]
 
 

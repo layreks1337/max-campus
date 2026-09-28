@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.dates import local
 from app.db.models import (
     ACTIVE_STATUSES,
     MOD_APPROVED,
@@ -255,6 +256,37 @@ PREFETCH_RULES: list[tuple[tuple[str, ...], str, str]] = [
 ]
 
 
+# Намерение оформить документ и какой именно. Ассистент на «хочу справку
+# в военкомат» писал «нажми на кнопку ниже», а кнопку давал через раз: модель
+# не всегда вызывает start_request. Кнопку к форме кладём сами, как и данные
+# предзапроса; модель узнаёт из блока данных, что она уже показана.
+_ISSUE_INTENT = (
+    "оформ", "заказ", "получить", "хочу справк", "нужна справк", "нужно заявлен",
+    "подать", "написать заявлен", "сделать справк", "взять справк",
+)
+TEMPLATE_HINTS: list[tuple[tuple[str, ...], str]] = [
+    (("военкомат", "военный комиссариат", "военного комиссариата", "в военк"), "military_certificate"),
+    (("справк-вызов", "справка-вызов", "справку-вызов", "вызов на сессию"), "session_summons"),
+    (("социальн",), "social_scholarship"),
+    (("размере стипенд", "о стипенд", "справку о доход", "справка о доход"), "income_certificate"),
+    (("материальн",), "financial_aid"),
+    (("общежит",), "dormitory"),
+    (("академ",), "academic_leave"),
+    (("об обучении", "с места учёбы", "с места учебы", "что я учусь", "что учусь"), "study_certificate"),
+]
+
+
+def requested_template(question: str) -> str | None:
+    """Ключ шаблона, если вопрос — просьба оформить конкретный документ."""
+    low = question.lower().replace("ё", "е")
+    if not any(kw.replace("ё", "е") in low for kw in _ISSUE_INTENT):
+        return None
+    for keywords, key in TEMPLATE_HINTS:
+        if any(kw.replace("ё", "е") in low for kw in keywords):
+            return key
+    return None
+
+
 # Инструменты, которые читают собственные данные студента, а не справочники
 OWN_DATA_TOOLS = ("get_my_requests", "get_my_matches")
 
@@ -288,6 +320,15 @@ async def prefetch(ctx: ToolContext, question: str) -> list[tuple[str, str]]:
             log.info("Предзапрос %s по формулировке вопроса", tool_name)
         except Exception:
             log.exception("Предзапрос %s не удался", tool_name)
+
+    template_key = requested_template(question)
+    if template_key:
+        try:
+            output = await dispatch(ctx, "start_request", {"template_key": template_key})
+            blocks.append(("Кнопка к форме заявки (уже показана студенту)", output))
+            log.info("Предзапрос start_request(%s) по формулировке вопроса", template_key)
+        except Exception:
+            log.exception("Предзапрос start_request не удался")
     return blocks
 
 
@@ -326,8 +367,8 @@ async def _get_my_requests(ctx: ToolContext, only_active: bool = False) -> str:
                 "title": r.template.short_title or r.template.title,
                 "status": STATUS_TITLES.get(r.status, r.status),
                 "status_code": r.status,
-                "submitted": r.created_at.strftime("%d.%m.%Y"),
-                "due": r.due_at.strftime("%d.%m.%Y") if r.due_at else None,
+                "submitted": local(r.created_at).strftime("%d.%m.%Y"),
+                "due": local(r.due_at).strftime("%d.%m.%Y") if r.due_at else None,
                 "has_document": r.document is not None,
             }
         )
@@ -437,7 +478,7 @@ async def _list_events(ctx: ToolContext, days: int = 14) -> str:
             {
                 "id": e.id,
                 "title": e.title,
-                "when": e.starts_at.strftime("%d.%m %H:%M"),
+                "when": local(e.starts_at).strftime("%d.%m %H:%M"),
                 "location": e.location,
                 "needs_registration": e.registration_required,
             }
@@ -460,7 +501,7 @@ async def _list_opportunities(ctx: ToolContext, kind: str | None = None) -> str:
             "title": o.title,
             "kind": o.kind,
             "organizer": o.organizer,
-            "deadline": o.registration_deadline.strftime("%d.%m.%Y")
+            "deadline": local(o.registration_deadline).strftime("%d.%m.%Y")
             if o.registration_deadline
             else None,
             "team": f"{o.team_size_min}–{o.team_size_max}" if o.team_size_max > 1 else "лично",
@@ -500,7 +541,7 @@ async def _get_my_matches(ctx: ToolContext) -> str:
             {
                 "origin": "Наставник" if m.origin == "BUDDY" else "Отклик",
                 "about": intent.title if intent else "Знакомство",
-                "when": m.created_at.strftime("%d.%m"),
+                "when": local(m.created_at).strftime("%d.%m"),
             }
         )
     ctx.add_action({"type": "open_matches", "label": "Открыть мои отклики"})
