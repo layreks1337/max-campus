@@ -260,13 +260,21 @@ async def seed_demo_people(session: AsyncSession) -> int:
     return created
 
 async def seed_campus(session: AsyncSession) -> int:
-    """Расписание, баллы, корпуса и староста — каждое, только если таблица пуста."""
+    """Расписание, баллы, корпуса и староста — каждое, только если таблица пуста.
+
+    Исключение — обложки корпусов: они обновляются и в заполненной базе, как
+    у событий, иначе там остались бы ссылки на удалённые снимки.
+    """
     created = 0
 
-    if not (await session.execute(select(func.count(Building.id)))).scalar():
+    buildings = {b.code: b for b in (await session.execute(select(Building))).scalars()}
+    if not buildings:
         for b in campus.BUILDINGS:
             session.add(Building(**b))
             created += 1
+    for b in campus.BUILDINGS:
+        if b["code"] in buildings:
+            buildings[b["code"]].cover_url = b["cover_url"]
 
     students = list((await session.execute(select(Student))).scalars())
 

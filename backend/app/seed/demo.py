@@ -137,7 +137,7 @@ def _events() -> list[dict]:
             "ends_at": _at(6, 15, 0),
             "location": "Главный корпус · холл",
             "organizer_name": "Студенческий совет",
-            "cover_url": "/covers/fair.jpg",
+            "cover_url": "",  # без фото: на снимке иностранная ярмарка
             "audience_json": {"courses": [1, 2]},
             "capacity": 0,
             "registration_required": False,
@@ -165,7 +165,7 @@ def _events() -> list[dict]:
             "ends_at": _at(11, 16, 0),
             "location": "Гагарина, 20 · конференц-зал",
             "organizer_name": "Центр карьеры",
-            "cover_url": "/covers/employers.jpg",
+            "cover_url": "",  # без фото: на снимке ярмарка вакансий в Софии
             "audience_json": {"faculties": [FACULTIES[0], FACULTIES[4]]},
             "capacity": 40,
             "registration_required": True,
@@ -178,7 +178,7 @@ def _events() -> list[dict]:
             "ends_at": _at(14, 14, 0),
             "location": "Спорткомплекс ИГУ",
             "organizer_name": "Спортивный клуб",
-            "cover_url": "/covers/volleyball.jpg",
+            "cover_url": "",  # без фото: на снимке американская команда
             "audience_json": {"only_freshmen": True},
             "capacity": 0,
             "registration_required": False,
@@ -250,8 +250,10 @@ def _opportunities() -> list[dict]:
             "level": "INTERNAL",
             "organizer": "Научное студенческое общество",
             "url": "",
-            "cover_url": "/covers/research.jpg",
-            "registration_deadline": now + timedelta(days=12),
+            "cover_url": "",  # без фото: на снимке водяной знак другого вуза
+            # Обложка без фото показывает время срока — оно должно быть осмысленным,
+            # а не часом запуска сервера
+            "registration_deadline": _at(12, 18, 0),
             "team_size_min": 1,
             "team_size_max": 2,
             "prize_text": "Баллы к повышенной стипендии",
