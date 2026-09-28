@@ -1,0 +1,154 @@
+{
+  "synthetic": true,
+  "note": "Синтетические данные для проверки: люди, коды, события и тексты выдуманы, совпадения с реальными людьми случайны. Реальные системы вуза не подключены — см. README, «Что смоделировано».",
+  "generated": "Сгенерировано scripts/export_testdata.py из backend/app/seed/demo.py (events). Руками не править.",
+  "note_dates": "Даты сдвигаются от текущего дня при каждом старте и раз в сутки: in_days — через сколько дней от сегодня, local_time — время вуза (UTC+8). capacity 0 — без ограничения мест; билет (QR) — у событий с записью.",
+  "api": "GET /api/events; запись — POST /api/events/{event_id}/register, билет — GET /api/events/{event_id}/ticket",
+  "events": [
+    {
+      "title": "Собрание первокурсников ИМИТ",
+      "kind": "MEETING",
+      "starts": {
+        "in_days": 1,
+        "local_time": "14:00"
+      },
+      "ends": {
+        "in_days": 1,
+        "local_time": "15:30"
+      },
+      "location": "Гагарина, 20 · ауд. 412",
+      "organizer_name": "Деканат ИМИТ",
+      "audience": {
+        "faculties": [
+          "Институт математики и информационных технологий"
+        ],
+        "courses": [
+          1
+        ]
+      },
+      "capacity": 60,
+      "registration_required": true,
+      "description": "Разбираем, как устроена сессия, зачётная неделя и что делать, если что-то пошло не так. Приходите с вопросами."
+    },
+    {
+      "title": "Последний день подачи на социальную стипендию",
+      "kind": "DEADLINE",
+      "starts": {
+        "in_days": 4,
+        "local_time": "18:00"
+      },
+      "ends": null,
+      "location": "Онлайн",
+      "organizer_name": "Стипендиальный отдел",
+      "audience": {},
+      "capacity": 0,
+      "registration_required": false,
+      "description": "Приём документов на осенний семестр закрывается. Заявление можно подать прямо в приложении."
+    },
+    {
+      "title": "Ярмарка студенческих объединений",
+      "kind": "CEREMONY",
+      "starts": {
+        "in_days": 6,
+        "local_time": "11:00"
+      },
+      "ends": {
+        "in_days": 6,
+        "local_time": "15:00"
+      },
+      "location": "Главный корпус · холл",
+      "organizer_name": "Студенческий совет",
+      "audience": {
+        "courses": [
+          1,
+          2
+        ]
+      },
+      "capacity": 0,
+      "registration_required": false,
+      "description": "Профком, студсовет, научное общество, волонтёрский центр, творческие коллективы и спортивные секции — все в одном месте."
+    },
+    {
+      "title": "Мастер-класс: как оформить научную публикацию",
+      "kind": "LECTURE",
+      "starts": {
+        "in_days": 8,
+        "local_time": "16:00"
+      },
+      "ends": {
+        "in_days": 8,
+        "local_time": "18:00"
+      },
+      "location": "Гагарина, 20 · ауд. 305",
+      "organizer_name": "НСО",
+      "audience": {
+        "courses": [
+          2,
+          3,
+          4
+        ]
+      },
+      "capacity": 25,
+      "registration_required": true,
+      "description": "Разбираем требования к статье, выбор журнала и типичные причины отказа. Ведёт научное студенческое общество."
+    },
+    {
+      "title": "Встреча с работодателями: ИТ-компании Иркутска",
+      "kind": "MEETING",
+      "starts": {
+        "in_days": 11,
+        "local_time": "13:00"
+      },
+      "ends": {
+        "in_days": 11,
+        "local_time": "16:00"
+      },
+      "location": "Гагарина, 20 · конференц-зал",
+      "organizer_name": "Центр карьеры",
+      "audience": {
+        "faculties": [
+          "Институт математики и информационных технологий",
+          "Физический факультет"
+        ]
+      },
+      "capacity": 40,
+      "registration_required": true,
+      "description": "Стажировки, требования к junior-специалистам, разбор резюме. Приходят пять компаний."
+    },
+    {
+      "title": "Кубок первокурсника по волейболу",
+      "kind": "SPORT",
+      "starts": {
+        "in_days": 14,
+        "local_time": "10:00"
+      },
+      "ends": {
+        "in_days": 14,
+        "local_time": "14:00"
+      },
+      "location": "Спорткомплекс ИГУ",
+      "organizer_name": "Спортивный клуб",
+      "audience": {
+        "only_freshmen": true
+      },
+      "capacity": 0,
+      "registration_required": false,
+      "description": "Межфакультетский турнир. Заявки от команд — через старост."
+    },
+    {
+      "title": "Приём документов на материальную помощь",
+      "kind": "DEADLINE",
+      "starts": {
+        "in_days": 17,
+        "local_time": "17:00"
+      },
+      "ends": null,
+      "location": "Онлайн",
+      "organizer_name": "Стипендиальный отдел",
+      "audience": {},
+      "capacity": 0,
+      "registration_required": false,
+      "description": "Стипендиальная комиссия рассматривает заявления раз в две недели. Следующее заседание — после этой даты."
+    }
+  ]
+}

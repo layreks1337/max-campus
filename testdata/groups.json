@@ -1,0 +1,130 @@
+{
+  "synthetic": true,
+  "note": "Синтетические данные для проверки: люди, коды, события и тексты выдуманы, совпадения с реальными людьми случайны. Реальные системы вуза не подключены — см. README, «Что смоделировано».",
+  "generated": "Сгенерировано scripts/export_testdata.py из backend/app/seed/demo.py и seed/campus.py. Руками не править.",
+  "note_schedule": "Расписание синтетическое (seed/campus.py, schedule_for): schedule_slots — строк расписания группы на неделю, включая пары только чётной или нечётной недели.",
+  "groups": [
+    {
+      "group_name": "Б-22-1",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 4,
+      "students": [
+        "22105"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Б-23-1",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 3,
+      "students": [
+        "23107"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Б-23-2",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 3,
+      "students": [
+        "23215"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Б-24-3",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 2,
+      "students": [
+        "24308"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Б-25-1",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 1,
+      "students": [
+        "25101",
+        "25102"
+      ],
+      "group_head": "25101",
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Б-25-2",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 1,
+      "students": [
+        "25103"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "И-23-1",
+      "faculty": "Исторический факультет",
+      "faculty_short": "ИФ",
+      "course": 3,
+      "students": [
+        "23601"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "С-25-2",
+      "faculty": "Институт социальных наук",
+      "faculty_short": "ИСН",
+      "course": 1,
+      "students": [
+        "25502"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Ф-24-1",
+      "faculty": "Физический факультет",
+      "faculty_short": "ФФ",
+      "course": 2,
+      "students": [
+        "24701"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Ю-22-1",
+      "faculty": "Юридический институт",
+      "faculty_short": "ЮИ",
+      "course": 4,
+      "students": [
+        "22410"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    },
+    {
+      "group_name": "Ю-25-1",
+      "faculty": "Юридический институт",
+      "faculty_short": "ЮИ",
+      "course": 1,
+      "students": [
+        "25401"
+      ],
+      "group_head": null,
+      "schedule_slots": 17
+    }
+  ]
+}

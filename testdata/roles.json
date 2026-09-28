@@ -1,0 +1,55 @@
+{
+  "synthetic": true,
+  "note": "Синтетические данные для проверки: люди, коды, события и тексты выдуманы, совпадения с реальными людьми случайны. Реальные системы вуза не подключены — см. README, «Что смоделировано».",
+  "generated": "Сгенерировано scripts/export_testdata.py из backend/app/core (вход и роли) и seed/demo.py. Руками не править.",
+  "test_accounts": {
+    "header": "Authorization: MaxInitData dev:<id>:<Имя>",
+    "id_range": [
+      900000,
+      999999
+    ],
+    "rules": [
+      "Тестовый вход без подписи MAX — только для id из диапазона, иначе 401 BAD_INIT_DATA; выключается переменной ALLOW_DEV_AUTH=false.",
+      "Аккаунт создаётся при первом запросе; новый id — чистый аккаунт.",
+      "Имя — латиницей: заголовки HTTP допускают только latin-1.",
+      "Сообщения в MAX тестовым id не отправляются: PDF — по ссылке из заявки.",
+      "scripts/reset_demo.sh удаляет тестовые аккаунты вместе со всем, что они создали."
+    ],
+    "password": null
+  },
+  "roles": [
+    {
+      "role": "public",
+      "how": "Без заголовка Authorization",
+      "can": "GET /api/health; PDF и проверка подлинности по uuid документа (GET /api/documents/{doc_uuid}, GET /api/verify/{doc_uuid}, страница /verify/{doc_uuid}) — так открывается QR-код из справки"
+    },
+    {
+      "role": "student",
+      "how": "Authorization: MaxInitData dev:990301:Expert → POST /api/binding/demo (своя копия демо-студента) или POST /api/binding/claim с кодом студента",
+      "can": "Профиль, заявки и справки, ассистент, афиша и билеты, «Люди» — только свои данные"
+    },
+    {
+      "role": "STAFF_HEAD (демо, в один тап)",
+      "how": "Тот же аккаунт с демо-копией → POST /api/binding/demo-staff",
+      "can": "Очередь деканата со своими заявками: провести заявку до выдачи PDF, проверить билет"
+    },
+    {
+      "role": "STAFF_CLERK",
+      "how": "Отдельный тестовый id → POST /api/binding/staff {\"code\": \"STAFF-001\"}",
+      "can": "очередь заявок деканата: принять в работу, запросить уточнение, отклонить, передать на подпись; проверка билетов на входе (код или QR)"
+    },
+    {
+      "role": "STAFF_HEAD",
+      "how": "Отдельный тестовый id → POST /api/binding/staff {\"code\": \"STAFF-002\"}",
+      "can": "очередь заявок деканата: принять в работу, запросить уточнение, отклонить, передать на подпись; подпись («Готова») и выдача документа — PDF уходит студенту; проверка билетов на входе (код или QR)"
+    }
+  ],
+  "in_max": "В MAX вход — подписанная строка запуска (Authorization: MaxInitData <initData>, HMAC-SHA256 от токена бота, живёт час). В браузере по кнопке бота — Authorization: MaxLink <токен из ?lt=>, сутки. Логинов и паролей в сервисе нет.",
+  "data_api": {
+    "file": "DATA-API.yaml",
+    "role_student_token_env": "DATA_API_TOKEN_STUDENT",
+    "role_student_token_example": "MaxInitData dev:990301:Expert",
+    "run": "DATA_API_TOKEN_STUDENT=\"MaxInitData dev:990301:Expert\" python scripts/check_data_api.py",
+    "cleanup": "bash scripts/reset_demo.sh"
+  }
+}

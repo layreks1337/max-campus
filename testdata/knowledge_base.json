@@ -1,0 +1,83 @@
+{
+  "synthetic": true,
+  "note": "Синтетические данные для проверки: люди, коды, события и тексты выдуманы, совпадения с реальными людьми случайны. Реальные системы вуза не подключены — см. README, «Что смоделировано».",
+  "generated": "Сгенерировано scripts/export_testdata.py из backend/app/seed/knowledge.py (DOCUMENTS). Руками не править.",
+  "note_content": "Тексты составлены по типовым нормам российских вузов и не являются актами ИГУ; в базе помечены is_demo=true.",
+  "documents": [
+    {
+      "title": "Порядок получения справок об обучении",
+      "source_type": "regulation",
+      "chars": 828
+    },
+    {
+      "title": "Справка для военного комиссариата",
+      "source_type": "regulation",
+      "chars": 796
+    },
+    {
+      "title": "Государственная академическая стипендия",
+      "source_type": "regulation",
+      "chars": 977
+    },
+    {
+      "title": "Государственная социальная стипендия",
+      "source_type": "regulation",
+      "chars": 1127
+    },
+    {
+      "title": "Материальная помощь студентам",
+      "source_type": "regulation",
+      "chars": 904
+    },
+    {
+      "title": "Заселение в общежитие и порядок предоставления мест",
+      "source_type": "regulation",
+      "chars": 957
+    },
+    {
+      "title": "Академический отпуск",
+      "source_type": "regulation",
+      "chars": 1150
+    },
+    {
+      "title": "Академическая задолженность и пересдачи",
+      "source_type": "regulation",
+      "chars": 907
+    },
+    {
+      "title": "Пропуски занятий и справки о болезни",
+      "source_type": "regulation",
+      "chars": 878
+    },
+    {
+      "title": "Перевод, восстановление и отчисление",
+      "source_type": "regulation",
+      "chars": 979
+    },
+    {
+      "title": "Практика студентов",
+      "source_type": "regulation",
+      "chars": 803
+    },
+    {
+      "title": "Первокурснику: как всё устроено",
+      "source_type": "faq",
+      "chars": 900
+    },
+    {
+      "title": "Контакты и часы приёма деканатов",
+      "source_type": "faq",
+      "chars": 684
+    },
+    {
+      "title": "Именные и повышенные стипендии",
+      "source_type": "regulation",
+      "chars": 1012
+    },
+    {
+      "title": "Студенческие объединения и внеучебная жизнь",
+      "source_type": "faq",
+      "chars": 738
+    }
+  ]
+}

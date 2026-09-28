@@ -1,0 +1,366 @@
+{
+  "synthetic": true,
+  "note": "Синтетические данные для проверки: люди, коды, события и тексты выдуманы, совпадения с реальными людьми случайны. Реальные системы вуза не подключены — см. README, «Что смоделировано».",
+  "generated": "Сгенерировано scripts/export_testdata.py из backend/app/seed/templates.py (TEMPLATES). Руками не править.",
+  "api": "GET /api/requests/templates, GET /api/requests/templates/{key}; подача — POST /api/requests {\"template_key\": ..., \"payload\": {<name поля>: значение}}",
+  "auto_issue_rule": "auto_issue=true — типовой документ выдаётся в том же запросе («Демо-деканат (автоматическая выдача)»). Заполненное поле с manual_review=true делает заявку нетиповой: она идёт в очередь деканата.",
+  "templates": [
+    {
+      "key": "study_certificate",
+      "title": "Справка об обучении",
+      "short_title": "Справка об обучении",
+      "category": "Справки",
+      "description": "Подтверждает факт обучения. Нужна для соцзащиты, банка, работодателя.",
+      "sla_hours": 72,
+      "sla_days": 3,
+      "produces_document": true,
+      "auto_issue": true,
+      "fields": [
+        {
+          "name": "purpose",
+          "type": "select",
+          "label": "Куда нужна справка",
+          "options": [
+            "По месту требования",
+            "В органы соцзащиты",
+            "В банк",
+            "Работодателю",
+            "В пенсионный фонд"
+          ],
+          "required": true
+        },
+        {
+          "name": "copies",
+          "type": "number",
+          "label": "Количество экземпляров",
+          "min": 1,
+          "max": 5,
+          "default": 1
+        },
+        {
+          "name": "need_original",
+          "type": "bool",
+          "label": "Нужен оригинал с печатью",
+          "hint": "Электронную копию пришлём в чат в любом случае",
+          "default": false,
+          "manual_review": true
+        },
+        {
+          "name": "comment",
+          "type": "textarea",
+          "label": "Комментарий",
+          "placeholder": "Если есть особые требования к формулировке",
+          "maxLength": 500,
+          "manual_review": true
+        }
+      ]
+    },
+    {
+      "key": "military_certificate",
+      "title": "Справка в военный комиссариат",
+      "short_title": "Справка в военкомат",
+      "category": "Справки",
+      "description": "Форма для предоставления отсрочки. Срок — 3 рабочих дня.",
+      "sla_hours": 72,
+      "sla_days": 3,
+      "produces_document": true,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "commissariat",
+          "type": "text",
+          "label": "Военкомат",
+          "placeholder": "Например: Октябрьского района г. Иркутска",
+          "required": true,
+          "maxLength": 200
+        },
+        {
+          "name": "need_original",
+          "type": "bool",
+          "label": "Нужен оригинал с печатью",
+          "default": true
+        }
+      ]
+    },
+    {
+      "key": "income_certificate",
+      "title": "Справка о размере стипендии",
+      "short_title": "Справка о стипендии",
+      "category": "Справки",
+      "description": "Сведения о начисленной стипендии за выбранный период.",
+      "sla_hours": 96,
+      "sla_days": 4,
+      "produces_document": true,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "period",
+          "type": "select",
+          "label": "Период",
+          "options": [
+            "Последние 3 месяца",
+            "Последние 6 месяцев",
+            "Текущий учебный год",
+            "Предыдущий учебный год"
+          ],
+          "required": true
+        },
+        {
+          "name": "purpose",
+          "type": "select",
+          "label": "Куда предоставляется",
+          "options": [
+            "В органы соцзащиты",
+            "В банк",
+            "По месту требования"
+          ],
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "social_scholarship",
+      "title": "Заявление на государственную социальную стипендию",
+      "short_title": "Социальная стипендия",
+      "category": "Стипендии",
+      "description": "Для льготных категорий. Нужен документ-основание из соцзащиты.",
+      "sla_hours": 120,
+      "sla_days": 5,
+      "produces_document": true,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "category",
+          "type": "select",
+          "label": "Основание",
+          "options": [
+            "Малоимущая семья",
+            "Инвалидность I или II группы",
+            "Потеря кормильца",
+            "Сирота или без попечения родителей",
+            "Ветеран боевых действий"
+          ],
+          "required": true
+        },
+        {
+          "name": "doc_scan",
+          "type": "file",
+          "label": "Подтверждающий документ",
+          "hint": "Справка из органов соцзащиты, фото или PDF",
+          "accept": [
+            "image/*",
+            "application/pdf"
+          ],
+          "maxSizeMb": 10,
+          "required": true
+        },
+        {
+          "name": "period",
+          "type": "select",
+          "label": "Семестр",
+          "options": [
+            "Осенний семестр",
+            "Весенний семестр"
+          ],
+          "required": true
+        },
+        {
+          "name": "comment",
+          "type": "textarea",
+          "label": "Комментарий",
+          "maxLength": 500
+        }
+      ]
+    },
+    {
+      "key": "financial_aid",
+      "title": "Заявление на материальную помощь",
+      "short_title": "Материальная помощь",
+      "category": "Стипендии",
+      "description": "Единовременная выплата при трудной жизненной ситуации.",
+      "sla_hours": 168,
+      "sla_days": 7,
+      "produces_document": true,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "reason",
+          "type": "select",
+          "label": "Причина обращения",
+          "options": [
+            "Тяжёлое материальное положение",
+            "Лечение и медицинские расходы",
+            "Рождение ребёнка",
+            "Смерть близкого родственника",
+            "Утрата имущества",
+            "Иное"
+          ],
+          "required": true
+        },
+        {
+          "name": "details",
+          "type": "textarea",
+          "label": "Опишите ситуацию",
+          "placeholder": "Кратко, что произошло",
+          "required": true,
+          "minLength": 20,
+          "maxLength": 1000
+        },
+        {
+          "name": "doc_scan",
+          "type": "file",
+          "label": "Подтверждающие документы",
+          "accept": [
+            "image/*",
+            "application/pdf"
+          ],
+          "maxSizeMb": 10
+        }
+      ]
+    },
+    {
+      "key": "dormitory",
+      "title": "Заявление на место в общежитии",
+      "short_title": "Общежитие",
+      "category": "Быт",
+      "description": "Заселение или продление. Рассматривается жилищной комиссией.",
+      "sla_hours": 168,
+      "sla_days": 7,
+      "produces_document": true,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "action",
+          "type": "select",
+          "label": "Что нужно",
+          "options": [
+            "Заселение",
+            "Продление проживания",
+            "Смена комнаты"
+          ],
+          "required": true
+        },
+        {
+          "name": "priority_ground",
+          "type": "select",
+          "label": "Льготное основание",
+          "options": [
+            "Нет",
+            "Сирота или без попечения родителей",
+            "Инвалидность",
+            "Малоимущая семья",
+            "Иногородний"
+          ],
+          "default": "Нет"
+        },
+        {
+          "name": "comment",
+          "type": "textarea",
+          "label": "Комментарий",
+          "maxLength": 500
+        }
+      ]
+    },
+    {
+      "key": "academic_leave",
+      "title": "Заявление на академический отпуск",
+      "short_title": "Академический отпуск",
+      "category": "Обучение",
+      "description": "По медицинским, семейным или иным обстоятельствам.",
+      "sla_hours": 168,
+      "sla_days": 7,
+      "produces_document": true,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "reason",
+          "type": "select",
+          "label": "Основание",
+          "options": [
+            "Медицинские показания",
+            "Семейные обстоятельства",
+            "Призыв на военную службу",
+            "Уход за ребёнком",
+            "Иные исключительные случаи"
+          ],
+          "required": true
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "label": "Предполагаемая дата начала",
+          "required": true
+        },
+        {
+          "name": "doc_scan",
+          "type": "file",
+          "label": "Подтверждающий документ",
+          "hint": "Заключение врачебной комиссии, повестка и т.п.",
+          "accept": [
+            "image/*",
+            "application/pdf"
+          ],
+          "maxSizeMb": 10,
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "session_summons",
+      "title": "Справка-вызов на сессию",
+      "short_title": "Справка-вызов",
+      "category": "Справки",
+      "description": "Для заочной формы — основание для учебного отпуска у работодателя.",
+      "sla_hours": 96,
+      "sla_days": 4,
+      "produces_document": true,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "employer",
+          "type": "text",
+          "label": "Название организации-работодателя",
+          "required": true,
+          "maxLength": 200
+        },
+        {
+          "name": "session",
+          "type": "select",
+          "label": "Сессия",
+          "options": [
+            "Зимняя",
+            "Летняя"
+          ],
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "support_question",
+      "title": "Обращение в деканат",
+      "short_title": "Обращение",
+      "category": "Обращения",
+      "description": "Вопрос сотруднику, если ассистент не смог помочь.",
+      "sla_hours": 48,
+      "sla_days": 2,
+      "produces_document": false,
+      "auto_issue": false,
+      "fields": [
+        {
+          "name": "question",
+          "type": "textarea",
+          "label": "Вопрос",
+          "required": true,
+          "minLength": 5,
+          "maxLength": 1000
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "label": "Источник",
+          "maxLength": 40
+        }
+      ]
+    }
+  ]
+}

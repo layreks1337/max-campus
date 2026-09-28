@@ -1,0 +1,443 @@
+{
+  "synthetic": true,
+  "note": "Синтетические данные для проверки: люди, коды, события и тексты выдуманы, совпадения с реальными людьми случайны. Реальные системы вуза не подключены — см. README, «Что смоделировано».",
+  "generated": "Сгенерировано scripts/export_testdata.py из backend/app/seed/demo.py (STUDENTS) и seed/campus.py (баллы, староста). Руками не править.",
+  "demo_template": {
+    "record_book_no": "25101",
+    "full_name": "Петрова Анна Сергеевна",
+    "group_name": "Б-25-1",
+    "how_used": "POST /api/binding/demo («Попробовать как студент (демо)») создаёт аккаунту свою копию этого студента: группа, курс, институт, баллы и права старосты те же, зачётка DEMO-<id аккаунта в базе>, ФИО — из профиля MAX (нет имени — ФИО шаблона). Копия одна на аккаунт; scripts/reset_demo.sh удаляет копии.",
+    "grades": [
+      {
+        "subject": "Математический анализ",
+        "title": "Контрольная работа 1",
+        "points": 21,
+        "max_points": 25,
+        "control": "Экзамен",
+        "teacher": "Горбунов В. А."
+      },
+      {
+        "subject": "Математический анализ",
+        "title": "Домашние задания",
+        "points": 14,
+        "max_points": 15,
+        "control": "Экзамен",
+        "teacher": "Горбунов В. А."
+      },
+      {
+        "subject": "Математический анализ",
+        "title": "Работа на занятиях",
+        "points": 9,
+        "max_points": 10,
+        "control": "Экзамен",
+        "teacher": "Горбунов В. А."
+      },
+      {
+        "subject": "Алгебра и геометрия",
+        "title": "Контрольная работа 1",
+        "points": 16,
+        "max_points": 25,
+        "control": "Экзамен",
+        "teacher": "Кравцов П. С."
+      },
+      {
+        "subject": "Алгебра и геометрия",
+        "title": "Домашние задания",
+        "points": 12,
+        "max_points": 15,
+        "control": "Экзамен",
+        "teacher": "Кравцов П. С."
+      },
+      {
+        "subject": "Алгебра и геометрия",
+        "title": "Работа на занятиях",
+        "points": 9,
+        "max_points": 10,
+        "control": "Экзамен",
+        "teacher": "Кравцов П. С."
+      },
+      {
+        "subject": "Программирование на Python",
+        "title": "Контрольная работа 1",
+        "points": 15,
+        "max_points": 25,
+        "control": "Экзамен",
+        "teacher": "Ильин Д. М."
+      },
+      {
+        "subject": "Программирование на Python",
+        "title": "Домашние задания",
+        "points": 10,
+        "max_points": 15,
+        "control": "Экзамен",
+        "teacher": "Ильин Д. М."
+      },
+      {
+        "subject": "Программирование на Python",
+        "title": "Работа на занятиях",
+        "points": 6,
+        "max_points": 10,
+        "control": "Экзамен",
+        "teacher": "Ильин Д. М."
+      },
+      {
+        "subject": "Дискретная математика",
+        "title": "Контрольная работа 1",
+        "points": 24,
+        "max_points": 25,
+        "control": "Экзамен",
+        "teacher": "Ершова Т. Н."
+      },
+      {
+        "subject": "Дискретная математика",
+        "title": "Домашние задания",
+        "points": 15,
+        "max_points": 15,
+        "control": "Экзамен",
+        "teacher": "Ершова Т. Н."
+      },
+      {
+        "subject": "Дискретная математика",
+        "title": "Работа на занятиях",
+        "points": 9,
+        "max_points": 10,
+        "control": "Экзамен",
+        "teacher": "Ершова Т. Н."
+      },
+      {
+        "subject": "История России",
+        "title": "Контрольная работа 1",
+        "points": 20,
+        "max_points": 25,
+        "control": "Зачёт",
+        "teacher": "Белова Н. К."
+      },
+      {
+        "subject": "История России",
+        "title": "Домашние задания",
+        "points": 13,
+        "max_points": 15,
+        "control": "Зачёт",
+        "teacher": "Белова Н. К."
+      },
+      {
+        "subject": "История России",
+        "title": "Работа на занятиях",
+        "points": 6,
+        "max_points": 10,
+        "control": "Зачёт",
+        "teacher": "Белова Н. К."
+      },
+      {
+        "subject": "Английский язык",
+        "title": "Контрольная работа 1",
+        "points": 19,
+        "max_points": 25,
+        "control": "Зачёт",
+        "teacher": "Смит О. В."
+      },
+      {
+        "subject": "Английский язык",
+        "title": "Домашние задания",
+        "points": 12,
+        "max_points": 15,
+        "control": "Зачёт",
+        "teacher": "Смит О. В."
+      },
+      {
+        "subject": "Английский язык",
+        "title": "Работа на занятиях",
+        "points": 8,
+        "max_points": 10,
+        "control": "Зачёт",
+        "teacher": "Смит О. В."
+      }
+    ]
+  },
+  "students": [
+    {
+      "full_name": "Петрова Анна Сергеевна",
+      "last_name": "Петрова",
+      "first_name": "Анна",
+      "middle_name": "Сергеевна",
+      "group_name": "Б-25-1",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 1,
+      "record_book_no": "25101",
+      "birth_date": "2007-04-12",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2026,
+      "is_demo_template": true,
+      "is_group_head": true,
+      "grades_count": 18,
+      "account": {
+        "type": "binding_code",
+        "binding_code": "A7K2-9M",
+        "note": "Вход по одноразовому коду привязки (POST /api/binding/claim)"
+      }
+    },
+    {
+      "full_name": "Иванов Михаил Дмитриевич",
+      "last_name": "Иванов",
+      "first_name": "Михаил",
+      "middle_name": "Дмитриевич",
+      "group_name": "Б-23-2",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 3,
+      "record_book_no": "23215",
+      "birth_date": "2005-09-03",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2024,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 18,
+      "account": {
+        "type": "binding_code",
+        "binding_code": "B3N8-4P",
+        "note": "Вход по одноразовому коду привязки (POST /api/binding/claim)"
+      }
+    },
+    {
+      "full_name": "Смирнова Дарья Игоревна",
+      "last_name": "Смирнова",
+      "first_name": "Дарья",
+      "middle_name": "Игоревна",
+      "group_name": "Б-25-1",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 1,
+      "record_book_no": "25102",
+      "birth_date": "2007-01-25",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2026,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 18,
+      "account": {
+        "type": "binding_code",
+        "binding_code": "C5R1-7T",
+        "note": "Вход по одноразовому коду привязки (POST /api/binding/claim)"
+      }
+    },
+    {
+      "full_name": "Кузнецов Артём Павлович",
+      "last_name": "Кузнецов",
+      "first_name": "Артём",
+      "middle_name": "Павлович",
+      "group_name": "Б-24-3",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 2,
+      "record_book_no": "24308",
+      "birth_date": "2006-06-17",
+      "education_form": "очная",
+      "funding": "договор",
+      "enrolled_year": 2025,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 18,
+      "account": {
+        "type": "binding_code",
+        "binding_code": "D9W6-2L",
+        "note": "Вход по одноразовому коду привязки (POST /api/binding/claim)"
+      }
+    },
+    {
+      "full_name": "Соколова Елизавета Андреевна",
+      "last_name": "Соколова",
+      "first_name": "Елизавета",
+      "middle_name": "Андреевна",
+      "group_name": "Ю-25-1",
+      "faculty": "Юридический институт",
+      "faculty_short": "ЮИ",
+      "course": 1,
+      "record_book_no": "25401",
+      "birth_date": "2007-03-08",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2026,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 15,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1004,
+        "username": "demo_25401",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    },
+    {
+      "full_name": "Попов Никита Олегович",
+      "last_name": "Попов",
+      "first_name": "Никита",
+      "middle_name": "Олегович",
+      "group_name": "Ю-22-1",
+      "faculty": "Юридический институт",
+      "faculty_short": "ЮИ",
+      "course": 4,
+      "record_book_no": "22410",
+      "birth_date": "2004-11-30",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2023,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 15,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1005,
+        "username": "demo_22410",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    },
+    {
+      "full_name": "Лебедева Мария Викторовна",
+      "last_name": "Лебедева",
+      "first_name": "Мария",
+      "middle_name": "Викторовна",
+      "group_name": "С-25-2",
+      "faculty": "Институт социальных наук",
+      "faculty_short": "ИСН",
+      "course": 1,
+      "record_book_no": "25502",
+      "birth_date": "2007-07-19",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2026,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 15,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1006,
+        "username": "demo_25502",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    },
+    {
+      "full_name": "Новиков Егор Романович",
+      "last_name": "Новиков",
+      "first_name": "Егор",
+      "middle_name": "Романович",
+      "group_name": "И-23-1",
+      "faculty": "Исторический факультет",
+      "faculty_short": "ИФ",
+      "course": 3,
+      "record_book_no": "23601",
+      "birth_date": "2005-02-14",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2024,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 15,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1007,
+        "username": "demo_23601",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    },
+    {
+      "full_name": "Морозова Полина Алексеевна",
+      "last_name": "Морозова",
+      "first_name": "Полина",
+      "middle_name": "Алексеевна",
+      "group_name": "Ф-24-1",
+      "faculty": "Физический факультет",
+      "faculty_short": "ФФ",
+      "course": 2,
+      "record_book_no": "24701",
+      "birth_date": "2006-10-05",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2025,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 15,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1008,
+        "username": "demo_24701",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    },
+    {
+      "full_name": "Волков Данил Сергеевич",
+      "last_name": "Волков",
+      "first_name": "Данил",
+      "middle_name": "Сергеевич",
+      "group_name": "Б-25-2",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 1,
+      "record_book_no": "25103",
+      "birth_date": "2007-05-22",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2026,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 18,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1009,
+        "username": "demo_25103",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    },
+    {
+      "full_name": "Зайцева София Максимовна",
+      "last_name": "Зайцева",
+      "first_name": "София",
+      "middle_name": "Максимовна",
+      "group_name": "Б-22-1",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 4,
+      "record_book_no": "22105",
+      "birth_date": "2004-08-11",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2023,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 18,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1010,
+        "username": "demo_22105",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    },
+    {
+      "full_name": "Орлов Тимур Ильич",
+      "last_name": "Орлов",
+      "first_name": "Тимур",
+      "middle_name": "Ильич",
+      "group_name": "Б-23-1",
+      "faculty": "Институт математики и информационных технологий",
+      "faculty_short": "ИМИТ",
+      "course": 3,
+      "record_book_no": "23107",
+      "birth_date": "2005-12-01",
+      "education_form": "очная",
+      "funding": "бюджет",
+      "enrolled_year": 2024,
+      "is_demo_template": false,
+      "is_group_head": false,
+      "grades_count": 18,
+      "account": {
+        "type": "demo-seed",
+        "max_user_id": -1011,
+        "username": "demo_23107",
+        "note": "Синтетический сосед по кампусу: аккаунт с отрицательным id, войти под ним нельзя; автор объявлений «Людей»"
+      }
+    }
+  ]
+}

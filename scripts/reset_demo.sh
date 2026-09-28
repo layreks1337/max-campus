@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # Сбрасывает следы прогонов: привязки живых пользователей, заявки, документы,
 # свайпы, диалоги ассистента, опросы групп (кроме заложенного сидом) и демо-копии
-# студентов (DEMO-*) с их баллами и голосами. Справочники, шаблоны и база знаний
-# остаются.
+# студентов (DEMO-*) с их баллами и голосами, тестовые аккаунты (id 900000–999999)
+# и файлы справок и вложений на диске. Справочники, шаблоны и база знаний остаются.
 #
 # Нужен, когда демонстрацию показывают несколько раз подряд и коды привязки
-# должны снова стать доступными.
+# должны снова стать доступными, а также после смоук-теста и прогона
+# scripts/check_data_api.py: всё, что они создают, удаляется здесь.
+#
+# Аргументы: имя контейнера базы (campus-db) и приложения (campus-app).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONTAINER="${1:-campus-db}"
+APP_CONTAINER="${2:-campus-app}"
 
 # Флаг -i обязателен: без него docker exec не пробрасывает stdin,
 # и SQL из heredoc молча уходит в никуда — скрипт «отрабатывает» вхолостую.
@@ -62,12 +66,30 @@ DELETE FROM student WHERE id IN (SELECT id FROM demo_students);
 DELETE FROM poll_vote WHERE poll_id <> (SELECT min(id) FROM group_poll);
 DELETE FROM group_poll WHERE id <> (SELECT min(id) FROM group_poll);
 
+-- Тестовые аккаунты (браузерный вход, смоук-тест, scripts/check_data_api.py):
+-- id 900000–999999, вход dev:<id>:<Имя>. Их привязки, роли, демо-копии, диалоги
+-- и объявления удалены выше; при следующем запросе аккаунт создаётся заново.
+-- Автор предложенной возможности остаётся вместе с ней.
+DELETE FROM app_user WHERE max_user_id BETWEEN 900000 AND 999999
+  AND id NOT IN (SELECT author_user_id FROM opportunity WHERE author_user_id IS NOT NULL);
+
 -- Очередь уведомлений
 DELETE FROM outbox;
 DELETE FROM audit_log;
 
 COMMIT;
 SQL
+
+# PDF справок и вложения заявок: записей о них больше нет, а файлы оставались
+# на диске после каждого прогона — смоук и check_data_api.py выдают справки.
+DATA_FILES='find /data/documents /data/uploads -type f'
+if docker exec "$APP_CONTAINER" true 2>/dev/null; then
+  FILES="$(docker exec "$APP_CONTAINER" sh -c "$DATA_FILES 2>/dev/null | wc -l" | tr -d '[:space:]')"
+  docker exec "$APP_CONTAINER" sh -c "$DATA_FILES -delete 2>/dev/null || true"
+  echo "Файлов справок и вложений удалено: ${FILES:-0}"
+else
+  echo "ВНИМАНИЕ: контейнер $APP_CONTAINER не запущен — файлы справок в /data не удалены" >&2
+fi
 
 echo
 echo "Состояние после сброса:"
@@ -76,6 +98,7 @@ SELECT 'свободных кодов привязки' AS показатель,
   FROM binding_code WHERE used_at IS NULL
 UNION ALL SELECT 'заявок', count(*)::text FROM request
 UNION ALL SELECT 'демо-копий студентов', count(*)::text FROM student WHERE record_book_no LIKE 'DEMO-%'
+UNION ALL SELECT 'тестовых аккаунтов', count(*)::text FROM app_user WHERE max_user_id BETWEEN 900000 AND 999999
 UNION ALL SELECT 'опросов групп', count(*)::text FROM group_poll
 UNION ALL SELECT 'объявлений в колоде', count(*)::text FROM intent WHERE active
 UNION ALL SELECT 'событий', count(*)::text FROM calendar_event

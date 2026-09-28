@@ -1,394 +1,282 @@
-# DATA-API.yaml — паспорт собственного API решения
+# DATA-API 1.0 — обязательные проверки основного сценария «Кампуса».
+# Шаблон и валидатор: https://gitverse.ru/stasnorman/example-data-api
 #
-# Требуется по п. 12 FAQ хакатона: решение предоставляет собственные HTTP(S)-методы,
-# которые являются частью продукта, поэтому к нему прилагаются HTTPS-адрес,
-# спецификация OpenAPI, тестовые данные и этот файл.
+# Сценарий: студент получает демо-профиль, подаёт заявку на справку об обучении,
+# справка выдаётся автоматически, PDF скачивается и проверяется по публичной ссылке;
+# ассистент отвечает по регламентам; тот же тестовый аккаунт включает роль
+# деканата и видит очередь заявок.
+#
+# Роли:
+#   public  — без авторизации;
+#   student — заголовок Authorization в формате «MaxInitData dev:<id>:<Имя>»,
+#             где id из тестового диапазона 900000–999999 (вне диапазона — 401).
+#             Готовое значение передаётся через защищённый канал проверки, в этом
+#             файле секретов нет. Каждый прогон может брать новый id — аккаунт
+#             создаётся при первом запросе.
+#
+# Данные демо: синтетические студенты, группы и шаблоны документов (см. testdata/
+# и README, раздел «Что смоделировано»). Живой прогон: python scripts/check_data_api.py
+
+schemaVersion: "1.0"
+
+solution:
+  name: "Кампус — справки и ответы по регламентам в MAX"
 
 api:
-  name: MAX Campus API
-  version: "1.0.0"
-  description: >-
-    Кампус — первокурснику, внутри мессенджера MAX: справка файлом в чат,
-    ответы по регламентам (ассистент на базе RAG), свои люди. Плюс подача
-    заявлений, календарь вуза, конкурсы и хакатоны.
+  baseUrl: "https://195-19-202-143.sslip.io"
+  openapi: "./openapi.json"
+  defaultHeaders:
+    Accept: "application/json"
 
-  # Постоянный адрес стенда на VPS (решение 048); он же — в README.md.
-  # Корень хоста: пути ниже указаны от него — /api/…, а также /verify, /ics
-  # и /webhook, которые лежат вне /api.
-  base_url: https://195-19-202-143.sslip.io
-  openapi:
-    version: "3.1"
-    url: https://195-19-202-143.sslip.io/api/openapi.json
-    interactive_docs: https://195-19-202-143.sslip.io/api/docs
+checks:
+  - id: "health"
+    name: "Сервис отвечает"
+    description: "Живость приложения и включённые интеграции"
+    method: "GET"
+    path: "/api/health"
+    role: "public"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["status", "features"]
+    timeoutMs: 5000
+    repeatable: true
 
-  protocol: HTTPS
-  format: application/json; charset=utf-8
-  language: ru
+  - id: "auth-required"
+    name: "Без авторизации профиль недоступен"
+    description: "Запрос без заголовка Authorization отклоняется ошибкой в едином формате"
+    method: "GET"
+    path: "/api/me"
+    role: "public"
+    expected:
+      statusCodes: [401]
+      contentType: "application/json"
+      requiredFields: ["error"]
+      bodySchema:
+        type: "object"
+        required: ["error"]
+        properties:
+          error:
+            type: "object"
+            required: ["code", "message"]
+    timeoutMs: 5000
+    repeatable: true
 
-authentication:
-  type: MAX initData
-  description: >-
-    Каждый запрос несёт подписанную строку запуска мини-приложения.
-    Подпись проверяется на сервере по HMAC-SHA256 с ключом, производным
-    от токена бота; срок жизни строки — час, в том числе для проверенной
-    и закешированной на 5 минут строки.
-  header: "Authorization: MaxInitData <initData>"
-  alternative_header: "X-Init-Data: <initData>"
-  validation:
-    algorithm: HMAC-SHA256
-    secret_derivation: HMAC_SHA256(key="WebAppData", msg=BOT_TOKEN)
-    signed_payload: >-
-      Пары key=value из WebAppData, кроме hash, отсортированные по ключу
-      и склеенные через перевод строки.
-    ttl_seconds: 3600
+  - id: "demo-login"
+    name: "Демо-профиль студента"
+    description: "Создаёт тестовому аккаунту собственную копию демо-студента; повторный вызов возвращает тот же профиль"
+    method: "POST"
+    path: "/api/binding/demo"
+    role: "student"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["is_bound", "role", "student"]
+      bodySchema:
+        type: "object"
+        required: ["is_bound", "role", "student"]
+        properties:
+          is_bound:
+            const: true
+          student:
+            type: "object"
+            required: ["full_name", "group_name"]
+    timeoutMs: 10000
+    repeatable: true
 
-  bot_link:
-    description: >-
-      Вход по подписанной ссылке от бота (решение 057). Пока мини-приложение
-      не привязано к боту, кнопка в чате открывает браузер со ссылкой
-      ?lt=<max_user_id>.<exp>.<sig>; фронтенд передаёт токен заголовком.
-      sig = hex(HMAC_SHA256(key=LINK_SECRET или производный от токена бота,
-      msg="<max_user_id>.<exp>")), сравнение constant-time, срок — сутки.
-      Бот выдаёт токен только собеседнику, поэтому id в нём — настоящий
-      пользователь MAX.
-    header: "Authorization: MaxLink <токен>"
-    ttl_seconds: 86400
+  - id: "me"
+    name: "Профиль текущего пользователя"
+    method: "GET"
+    path: "/api/me"
+    role: "student"
+    dependsOn: ["demo-login"]
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["max_user_id", "is_bound", "role"]
+    timeoutMs: 5000
+    repeatable: true
 
-  development_mode:
-    description: >-
-      Для проверки вне мессенджера предусмотрен режим разработки:
-      вместо подписи принимается строка вида dev:<user_id>:<Name>.
-      Только для тестовых user_id 900000–999999, остальные получают 401 —
-      представиться настоящим пользователем MAX без подписи нельзя.
-      Совсем выключается переменной ALLOW_DEV_AUTH=false.
-    header_example: "Authorization: MaxInitData dev:900001:Anna"
+  - id: "templates"
+    name: "Каталог заявок и справок"
+    method: "GET"
+    path: "/api/requests/templates"
+    role: "student"
+    dependsOn: ["demo-login"]
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      bodySchema:
+        type: "array"
+        minItems: 1
+        items:
+          type: "object"
+          required: ["key", "title"]
+    timeoutMs: 5000
+    repeatable: true
 
-authorization:
-  roles:
-    - id: STUDENT
-      description: Студент. Доступ только к собственным данным.
-    - id: STAFF_CLERK
-      description: >-
-        Специалист деканата. Очередь заявок, приём в работу, уточнение,
-        отклонение, передача на подпись. Выдавать документы не может (403).
-    - id: STAFF_HEAD
-      description: >-
-        Подписант: всё, что специалист, плюс «Готова» и выдача документа.
-        Аккаунт с демо-копией студента получает эту роль в один тап и видит
-        только заявки своей копии.
-    - id: ORGANIZER
-      description: Создание событий календаря (вне демо-стенда).
-    - id: MODERATOR
-      description: Модерация пользовательских публикаций (вне демо-стенда).
-    - id: ADMIN
-      description: Все действия сотрудников.
-  principles:
-    - Роль читается из справочника сотрудников, никогда из запроса клиента,
-      и проверяется по действию (core/deps.py, решение 068).
-    - Студент не может получить чужие заявки или отклики. Готовый PDF и страница
-      проверки открываются без входа по ссылке с uuid4 документа — так работает
-      QR-код; списка документов без авторизации нет.
-    - Инструменты ассистента исполняются от имени текущего пользователя;
-      параметра «чей» в их схеме нет by design.
-    - Билет на входе проверяет любой сотрудник (все роли, кроме STUDENT): код
-      подписан HMAC, без самого билета чужую запись не отметить.
-    - Демо-стенд (DEMO_MODE=true). Коды сотрудников опубликованы, поэтому
-      события и модерация отвечают 403 DEMO_READ_ONLY, возможность от сотрудника
-      уходит на модерацию, а в очереди сотрудника по коду нет заявок демо-копий.
-      В «Людях» — только объявления синтетических студентов.
+  - id: "template-form"
+    name: "Форма справки об обучении"
+    description: "Поля формы описаны данными шаблона, а не кодом экрана"
+    method: "GET"
+    path: "/api/requests/templates/{key}"
+    role: "student"
+    dependsOn: ["templates"]
+    request:
+      path:
+        key: "study_certificate"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["key", "title", "fields"]
+    timeoutMs: 5000
+    repeatable: true
 
-endpoints:
-  groups:
-    - name: Профиль и привязка
-      paths:
-        - GET  /api/me
-        - POST /api/binding/claim
-        - POST /api/binding/staff
-        - POST /api/binding/demo
-        - POST /api/binding/demo-staff
-        - GET  /api/home
-        - POST /api/uploads
-    - name: Учёба и группа
-      paths:
-        - GET  /api/today
-        - GET  /api/schedule
-        - GET  /api/grades
-        - GET  /api/buildings
-        - GET  /api/group
-        - POST /api/group/polls
-        - POST /api/group/polls/{poll_id}/vote
-    - name: Заявки и справки
-      paths:
-        - GET  /api/requests/templates
-        - GET  /api/requests/templates/{key}
-        - GET  /api/requests
-        - POST /api/requests
-        - GET  /api/requests/{public_no}
-        - POST /api/requests/{public_no}/cancel
-        - POST /api/requests/{public_no}/info
-    - name: Деканат
-      paths:
-        - GET  /api/staff/requests
-        - POST /api/staff/requests/{public_no}/transition
-        - POST /api/staff/requests/{public_no}/issue
-        - POST /api/staff/tickets/check
-    - name: Календарь вуза
-      paths:
-        - GET    /api/events
-        - POST   /api/events
-        - POST   /api/events/{event_id}/register
-        - DELETE /api/events/{event_id}/register
-        - GET    /api/events/{event_id}/ticket
-        - POST   /api/events/{event_id}/share
-        - GET    /ics/event/{event_id}.ics
-    - name: Возможности
-      paths:
-        - GET  /api/opportunities
-        - POST /api/opportunities
-        - POST /api/opportunities/{opp_id}/interest
-        - POST /api/opportunities/{opp_id}/looking-for-team
-        - GET  /api/moderation/queue
-        - POST /api/moderation/{opp_id}/decide
-    - name: Знакомства
-      paths:
-        - GET    /api/match/deck
-        - POST   /api/match/swipe
-        - GET    /api/match/matches
-        - GET    /api/match/intents
-        - POST   /api/match/intents
-        - DELETE /api/match/intents/{intent_id}
-        - GET    /api/match/profile
-        - PUT    /api/match/profile
-    - name: Ассистент
-      paths:
-        - POST   /api/assistant/ask
-        - GET    /api/assistant/history
-        - DELETE /api/assistant/history
-        - GET    /api/assistant/status
-        - POST   /api/assistant/transcribe
-    - name: Публичные
-      paths:
-        - GET  /api/health
-        - GET  /api/documents/{uuid}
-        - GET  /api/verify/{uuid}
-        - GET  /verify/{uuid}
-        - GET  /webhook/max
-        - POST /webhook/max
+  - id: "create-request"
+    name: "Подача заявки на справку об обучении"
+    description: "Типовая справка выдаётся автоматически; PDF уходит студенту в чат MAX"
+    method: "POST"
+    path: "/api/requests"
+    role: "student"
+    dependsOn: ["template-form"]
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        template_key: "study_certificate"
+        payload:
+          purpose: "По месту требования"
+          copies: 1
+          need_original: false
+    expected:
+      statusCodes: [201]
+      contentType: "application/json"
+      requiredFields: ["public_no", "status", "status_title"]
+    timeoutMs: 20000
+    repeatable: false
+    extract:
+      publicNo: "$.public_no"
 
-errors:
-  envelope: '{ "error": { "code": "...", "message": "...", "details": { } } }'
-  codes:
-    - code: NO_AUTH
-      http: 401
-      meaning: Нет заголовка авторизации.
-    - code: BAD_INIT_DATA
-      http: 401
-      meaning: >-
-        Подпись запуска или ссылки бота не сошлась, истекла, либо dev-вход
-        с нетестовым id. Фронтенд показывает «Сессия устарела».
-    - code: BINDING_REQUIRED
-      http: 409
-      meaning: Студенческий не привязан, нужен онбординг.
-    - code: BAD_CODE
-      http: 404
-      meaning: Код привязки или сотрудника не найден или уже использован.
-    - code: ALREADY_BOUND
-      http: 409
-      meaning: Студент по этому коду уже привязан к другому аккаунту.
-    - code: FORBIDDEN
-      http: 403
-      meaning: Недостаточно прав для операции (роль не та).
-    - code: DEMO_READ_ONLY
-      http: 403
-      meaning: На демо-стенде публикация для всех (события, модерация) закрыта.
-    - code: NOT_FOUND
-      http: 404
-      meaning: Объект не найден или принадлежит другому пользователю.
-    - code: GONE
-      http: 410
-      meaning: Файл документа больше недоступен на сервере.
-    - code: VALIDATION_FAILED
-      http: 422
-      meaning: >-
-        Ошибки формы или параметров. У формы заявки — пофайловые сообщения
-        в details, у параметров запроса — details.errors (loc, msg, type).
-    - code: BAD_TRANSITION
-      http: 409
-      meaning: Недопустимый переход состояния заявки.
-    - code: REGISTRATION_CLOSED
-      http: 409
-      meaning: Регистрация на событие закрыта.
-    - code: CANCELLED
-      http: 409
-      meaning: Билет относится к отменённой записи на событие.
-    - code: ATTENDED
-      http: 409
-      meaning: Проход по билету уже отмечен — запись на событие не отменить.
-    - code: BAD_TICKET
-      http: 400
-      meaning: >-
-        Код билета не распознан (в строке нет кода вида T12-ABCDE) или подпись
-        неверна. Принимается сам код, ввод с пробелом и ссылка из QR с кодом.
-    - code: BAD_FILE_TYPE
-      http: 400
-      meaning: Вложение не PDF и не изображение.
-    - code: FILE_TOO_LARGE
-      http: 400
-      meaning: Вложение больше 10 МБ.
-    - code: PAYLOAD_TOO_LARGE
-      http: 413
-      meaning: Тело запроса больше 1 МБ (у /api/uploads — 11 МБ); не дочитывается.
-    - code: UPLOAD_QUOTA
-      http: 429
-      meaning: Исчерпана квота вложений студента.
-    - code: STORAGE_FULL
-      http: 507
-      meaning: Хранилище вложений сервера заполнено.
-    - code: RATE_LIMITED
-      http: 429
-      meaning: >-
-        Превышен лимит: подбор кода привязки, неверные коды билетов,
-        демо-вход с тестовых id, вопросы и голосовые вопросы ассистенту.
-    - code: DEMO_DISABLED
-      http: 404
-      meaning: Демо-вход выключен на сервере (DEMO_MODE=false).
-    - code: DEMO_UNAVAILABLE
-      http: 503
-      meaning: Демо-данные ещё не загружены (первые секунды после старта).
-    - code: BAD_WEBHOOK_SECRET
-      http: 403
-      meaning: Вебхук с неверным X-Max-Bot-Api-Secret.
-    - code: STT_FAILED
-      http: 502
-      meaning: SpeechKit не распознал голосовой вопрос или недоступен.
-    - code: UNAVAILABLE
-      http: 503
-      meaning: Распознавание речи не настроено (нет ключа Yandex Cloud).
-    - code: TOO_SHORT
-      http: 422
-      meaning: Голосовая запись слишком короткая.
-    - code: INTERNAL
-      http: 500
-      meaning: Необработанная ошибка сервера; подробности — только в логе.
+  - id: "get-request"
+    name: "Заявка, история статусов и выданный документ"
+    method: "GET"
+    path: "/api/requests/{public_no}"
+    role: "student"
+    dependsOn: ["create-request"]
+    request:
+      path:
+        public_no: "${publicNo}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["public_no", "status", "events", "document"]
+      bodySchema:
+        type: "object"
+        required: ["public_no", "status", "events", "document"]
+        properties:
+          document:
+            type: "object"
+            required: ["uuid", "download_url", "verify_url"]
+    timeoutMs: 5000
+    repeatable: true
+    extract:
+      docUuid: "$.document.uuid"
 
-# Все лимиты — в памяти процесса, рестарт их обнуляет. «С адреса» — по
-# X-Forwarded-For от Caddy; запросы изнутри сервера (смоук-тест) его не имеют.
-# Тестовые id браузерного входа придумываются без счёта, поэтому для них
-# действуют ещё и лимиты с адреса; скрипт со многих адресов их обходит.
-rate_limits:
-  - scope: Размер запроса
-    limit: 1 МБ на запрос, 11 МБ на /api/uploads; сверх лимита тело не читается (413)
-    reason: Иначе один большой запрос без авторизации съедал память сервера (1 ГБ).
-  - scope: Привязка студенческого
-    limit: 5 попыток в час на аккаунт и 20 неудачных в час с одного адреса
-    reason: Перебор кода со сменой тестовых id упирается в лимит с адреса.
-  - scope: Проверка билетов на входе
-    limit: 20 неверных подписей за 10 минут на сотрудника; нераспознанная строка не считается
-    reason: >-
-      Подпись билета — 5 символов, чтобы её можно было продиктовать, а коды
-      сотрудников на стенде публичные (решение 071).
-  - scope: Демо-вход (копии студента)
-    limit: >-
-      Аккаунт MAX — без лимита, одна копия на аккаунт. Тестовые id — 120 новых
-      копий в час на сервер и 10 с одного адреса.
-    reason: >-
-      Общий лимит на всех позволял скрипту закрыть демо-вход экспертам из MAX
-      (решение 067).
-  - scope: Вопросы ассистенту и голосовые вопросы
-    limit: >-
-      20 за 10 минут на пользователя; для тестовых id — ещё 40 за 10 минут с адреса.
-      Ответ — не дольше 25 секунд.
-    reason: Каждый вопрос — платный вызов YandexGPT или SpeechKit, адрес публичный.
-  - scope: Вложения к заявкам
-    limit: 20 файлов на студента, 500 МБ на сервер, 1 ГБ диска всегда свободен
-    reason: Диск стенда — 10 ГБ, ночная копия хранит файлы семь раз.
-  - scope: Исходящие сообщения в MAX
-    limit: 20 запросов в секунду
-    reason: Платформа допускает 30; держим запас.
+  - id: "download-document"
+    name: "PDF справки скачивается"
+    method: "GET"
+    path: "/api/documents/{doc_uuid}"
+    role: "student"
+    dependsOn: ["get-request"]
+    request:
+      path:
+        doc_uuid: "${docUuid}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/pdf"
+    timeoutMs: 10000
+    repeatable: true
 
-test_data:
-  disclaimer: >-
-    ВСЕ ДАННЫЕ СИНТЕТИЧЕСКИЕ. Студенты, сотрудники, события, конкурсы и тексты
-    регламентов составлены для демонстрации и не являются данными реального
-    учебного заведения. Интеграция с информационными системами вуза
-    смоделирована — см. раздел «Что смоделировано» в README.md.
+  - id: "verify-document"
+    name: "Подлинность справки проверяется по QR без авторизации"
+    method: "GET"
+    path: "/api/verify/{doc_uuid}"
+    role: "public"
+    dependsOn: ["get-request"]
+    request:
+      path:
+        doc_uuid: "${docUuid}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+    timeoutMs: 5000
+    repeatable: true
 
-  demo_login:
-    endpoint: POST /api/binding/demo
-    description: >-
-      Основной путь для экспертов, код не нужен. Аккаунт получает свою копию
-      синтетического студента Петровой А. С. (Б-25-1) с баллами и правами старосты,
-      зачётка DEMO-<id>, ФИО — из профиля MAX. Роль деканата — POST /api/binding/demo-staff.
-      Копии не получают групповых рассылок и не видны в счётчиках группы.
+  - id: "my-requests"
+    name: "Список моих заявок"
+    method: "GET"
+    path: "/api/requests"
+    role: "student"
+    dependsOn: ["create-request"]
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+    timeoutMs: 5000
+    repeatable: true
 
-  student_binding_codes:
-    - code: A7K2-9M
-      student: Петрова Анна Сергеевна, 1 курс, группа Б-25-1
-    - code: B3N8-4P
-      student: Иванов Михаил Дмитриевич, 3 курс, группа Б-23-2
-    - code: C5R1-7T
-      student: Смирнова Дарья Игоревна, 1 курс, группа Б-25-1
-    - code: D9W6-2L
-      student: Кузнецов Артём Павлович, 2 курс, группа Б-24-3
+  - id: "assistant"
+    name: "Ответ ассистента по регламентам с указанием источника"
+    description: "Поиск по базе регламентов выполняется до обращения к модели"
+    method: "POST"
+    path: "/api/assistant/ask"
+    role: "student"
+    dependsOn: ["demo-login"]
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        question: "Сколько дней делается справка об обучении?"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["answer", "sources"]
+    timeoutMs: 40000
+    repeatable: true
 
-  staff_codes:
-    - code: STAFF-001
-      role: STAFF_CLERK
-      person: Ковалёва Ирина Петровна, специалист по учебной работе
-    - code: STAFF-002
-      role: STAFF_HEAD
-      person: Дорохов Сергей Владимирович, заместитель директора института
+  - id: "staff-role"
+    name: "Роль деканата для демо-аккаунта"
+    description: "Тот же тестовый аккаунт получает права сотрудника без кода привязки"
+    method: "POST"
+    path: "/api/binding/demo-staff"
+    role: "student"
+    dependsOn: ["demo-login"]
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["role"]
+    timeoutMs: 10000
+    repeatable: true
 
-  seeded_content:
-    request_templates: 9
-    knowledge_base_documents: 15
-    calendar_events: 7
-    opportunities: 7
-    match_intents: 12
-    demo_students: 12
+  - id: "staff-queue"
+    name: "Очередь заявок деканата"
+    method: "GET"
+    path: "/api/staff/requests"
+    role: "student"
+    dependsOn: ["staff-role"]
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+    timeoutMs: 5000
+    repeatable: true
 
-external_dependencies:
-  - name: MAX Bot API
-    url: https://platform-api2.max.ru
-    purpose: Доставка уведомлений и готовых документов в чат, приём обновлений бота.
-    notes: >-
-      Требует корневые сертификаты Минцифры в доверенных; в образе они лежат
-      в /app/certs и подключаются переменной MAX_CA_BUNDLE.
-  - name: Yandex Foundation Models
-    url: https://ai.api.cloud.yandex.net/v1
-    purpose: Ответы ассистента (чат и вызов инструментов).
-    notes: OpenAI-совместимый эндпоинт, модель yandexgpt/latest.
-  - name: Yandex Foundation Models — эмбеддинги
-    url: https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding
-    purpose: Векторный поиск по базе знаний.
-    notes: >-
-      Модели text-search-doc (индексация) и text-search-query (поиск),
-      размерность вектора 256.
-  - name: Yandex SpeechKit
-    url: https://stt.api.cloud.yandex.net/speech/v1/stt:recognize
-    purpose: Распознавание голосового вопроса ассистенту (POST /api/assistant/transcribe).
-    notes: PCM 16 кГц до 30 секунд, тот же ключ YC_API_KEY.
-
-data_storage:
-  database: PostgreSQL 16 с расширением pgvector
-  files: Локальный том контейнера (/data), PDF документов и вложения заявок
-  retention: >-
-    Демонстрационная среда. Справочник студентов, сотрудники, расписание и баллы
-    синтетические. Данные живых людей обрабатываются: у каждого, кто открыл
-    приложение, хранятся id, имя, username и аватар из профиля MAX; ФИО демо-копии
-    берётся из профиля MAX и печатается в PDF и на странице проверки /verify;
-    вопросы ассистенту хранятся в истории диалога и передаются в Yandex Cloud
-    (YandexGPT, SpeechKit). scripts/reset_demo.sh удаляет демо-копии, заявки,
-    записи документов и диалоги.
-
-deployment:
-  containerized: true
-  compose_file: docker-compose.yml
-  services:
-    - db (pgvector/pgvector:pg16)
-    - app (FastAPI + собранный фронтенд в одном образе)
-    - caddy (профиль vps — HTTPS с сертификатом Let's Encrypt, так работает стенд)
-    - tunnel (cloudflared, профиль tunnel — публичный HTTPS без своего сервера;
-      в России Cloudflare режется частью провайдеров, только для проверки у себя)
-  # Локально без HTTPS — docker compose up -d --build
-  reproducible_start: docker compose --profile vps up -d --build
+cleanup:
+  - id: "cancel-request"
+    method: "POST"
+    path: "/api/requests/{public_no}/cancel"
+    role: "student"
+    request:
+      path:
+        public_no: "${publicNo}"
+    expected:
+      statusCodes: [200, 409]
+    timeoutMs: 5000
