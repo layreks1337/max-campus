@@ -209,6 +209,15 @@ function getLinkToken(): string | null {
 /** Открыто в браузере по ссылке из бота: пользователь настоящий, но вне MAX. */
 export const isLinkSession = (): boolean => !isInsideMax() && getLinkToken() !== null;
 
+/** Дойдёт ли сообщение бота до пользователя: он вошёл подписью MAX или по ссылке
+ *  из бота. Тестовый вход в браузере (и в эмуляторе ?maxEmu) — id 900000–999999,
+ *  такого аккаунта в MAX нет, и сервер ему в чат ничего не шлёт: обещать
+ *  «PDF придёт в чат» там нельзя (FAQ, п. 15 — смоделированное помечаем). */
+export const deliversToChat = (): boolean => isInsideMax() || isLinkSession();
+
+/** Пометка для тестового входа там, где в MAX обещали бы файл в чате. */
+export const TEST_LOGIN_NO_CHAT = "Тестовый вход: в чат не отправляется";
+
 /** Значение заголовка Authorization: подпись запуска MAX, ссылка бота или dev-вход. */
 export function getAuthHeader(): string {
   const real = window.WebApp?.initData;

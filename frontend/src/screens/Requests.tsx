@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { CardSkeleton, Chip, Empty } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
+import { deliversToChat } from "@/shared/max";
 import type { CampusRequest } from "@/shared/types";
 
 type Filter = "active" | "all";
@@ -65,7 +66,9 @@ export default function Requests() {
         <Empty
           icon={<FileText size={34} strokeWidth={1.5} />}
           title={filter === "active" ? "Активных заявок нет" : "Заявок пока нет"}
-          hint="Справки, заявления на стипендию, общежитие и другие документы оформляются здесь. Готовый файл придёт в чат."
+          hint={`Справки, заявления на стипендию, общежитие и другие документы оформляются здесь. ${
+            deliversToChat() ? "Готовый файл придёт в чат." : "Готовый файл — на экране заявки."
+          }`}
           action={
             <Button onClick={() => navigate("/requests/new")}>Оформить заявку</Button>
           }

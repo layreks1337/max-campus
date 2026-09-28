@@ -17,9 +17,28 @@ import {
 } from "@/components/ui/fields";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
+import { deliversToChat, TEST_LOGIN_NO_CHAT } from "@/shared/max";
 import type { CampusRequest, Template, TemplateField } from "@/shared/types";
 
 type Values = Record<string, unknown>;
+
+/** Подсказка под кнопкой отправки. Обещание «придёт в чат» — только настоящему
+ *  аккаунту MAX: тестовому входу в браузере сервер в чат не пишет. */
+function submitHint(template: Template, instant: boolean, manual: boolean): string {
+  const chat = deliversToChat();
+  if (instant) {
+    return chat
+      ? "Типовой документ выдаётся автоматически — PDF придёт в чат с ботом."
+      : `Типовой документ выдаётся автоматически. ${TEST_LOGIN_NO_CHAT} — PDF откроется на экране заявки.`;
+  }
+  const lead =
+    template.auto_issue && manual
+      ? `С этими пожеланиями заявку проверит сотрудник — около ${template.sla_days} дн.`
+      : `Срок рассмотрения — около ${template.sla_days} дн.`;
+  return chat
+    ? `${lead} Статус придёт в чат.`
+    : `${lead} ${TEST_LOGIN_NO_CHAT} — статус на экране заявки.`;
+}
 
 /** То же правило, что engine.can_auto_issue на сервере: поле считается
  *  заполненным, если значение не пустое и не совпадает со значением по умолчанию. */
@@ -204,11 +223,7 @@ export function DynamicForm({
           {instant ? "Получить PDF сразу" : "Отправить заявку"}
         </Button>
         <p className="mt-3 text-center text-[12px] text-faint">
-          {instant
-            ? "Типовой документ выдаётся автоматически — PDF придёт в чат с ботом."
-            : template.auto_issue && manual
-              ? `С этими пожеланиями заявку проверит сотрудник — около ${template.sla_days} дн. Статус придёт в чат.`
-              : `Срок рассмотрения — около ${template.sla_days} дн. Статус придёт в чат.`}
+          {submitHint(template, instant, manual)}
         </p>
       </div>
     </div>

@@ -12,6 +12,7 @@ import { GlassIcon } from "@/components/ui/glass-icon";
 import { CardSkeleton, Chip } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
+import { deliversToChat } from "@/shared/max";
 import type { Template } from "@/shared/types";
 import { cn, plural } from "@/shared/utils";
 
@@ -81,13 +82,19 @@ export default function RequestNew() {
           <h1 className="mb-2 text-[26px] leading-tight">{active.title}</h1>
           <p className="text-[15px] leading-relaxed text-muted">{active.description}</p>
           <p className="mt-3 text-[13px] text-faint">
+            {/* Тестовому входу в браузере сервер в чат не пишет — файл только в заявке */}
             {active.auto_issue ? (
-              "Типовая — выдаётся автоматически за секунды · PDF придёт файлом в чат"
+              deliversToChat() ? (
+                "Типовая — выдаётся автоматически за секунды · PDF придёт файлом в чат"
+              ) : (
+                "Типовая — выдаётся автоматически за секунды · PDF — на экране заявки"
+              )
             ) : (
               <>
                 Обычно занимает {active.sla_days}{" "}
                 {plural(active.sla_days, "день", "дня", "дней")}
-                {active.produces_document && " · документ придёт файлом в чат"}
+                {active.produces_document &&
+                  (deliversToChat() ? " · документ придёт файлом в чат" : " · документ — на экране заявки")}
               </>
             )}
           </p>
@@ -111,7 +118,9 @@ export default function RequestNew() {
       <header className="mb-5 px-1">
         <h1 className="mb-1">Что оформляем</h1>
         <p className="text-[14px] text-muted">
-          Заполняется в приложении, результат приходит в чат
+          {deliversToChat()
+            ? "Заполняется в приложении, результат приходит в чат"
+            : "Заполняется в приложении, результат — на экране заявки"}
         </p>
       </header>
 

@@ -16,7 +16,7 @@ import { ConfirmSheet, Sheet } from "@/components/ui/sheet";
 import { Card, CardSkeleton, Chip, Divider, StatusDot } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
-import { isInsideMax, openExternal } from "@/shared/max";
+import { deliversToChat, isInsideMax, openExternal, TEST_LOGIN_NO_CHAT } from "@/shared/max";
 import type { CampusRequest } from "@/shared/types";
 import {
   cn,
@@ -465,7 +465,15 @@ function Celebrate({ request }: { request: CampusRequest }) {
               <Check size={34} strokeWidth={3} />
             </motion.span>
             <p className="text-[20px] font-[700]">Справка готова</p>
-            <p className="mt-1 text-[13px] opacity-70">PDF уже в чате с ботом</p>
+            {/* PDF в чат уходит только настоящему аккаунту MAX; «Готова» без
+                выдачи — файла ещё нет, обещать нечего */}
+            {request.document && (
+              <p className="mt-1 max-w-[240px] text-center text-[13px] leading-snug opacity-70">
+                {deliversToChat()
+                  ? "PDF придёт в чат с ботом"
+                  : `${TEST_LOGIN_NO_CHAT} — PDF по кнопке «Открыть PDF»`}
+              </p>
+            )}
           </motion.div>
           {pieces.map((p, i) => (
             <motion.span
