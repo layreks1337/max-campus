@@ -19,7 +19,19 @@ from app.core.security import (
     validate_init_data,
     validate_link_token,
 )
-from app.db.models import STAFF_ROLES, AppUser, Binding, Staff, Student, utcnow
+from app.db.models import (
+    ROLE_ADMIN,
+    ROLE_CLERK,
+    ROLE_HEAD,
+    ROLE_MODERATOR,
+    ROLE_ORGANIZER,
+    STAFF_ROLES,
+    AppUser,
+    Binding,
+    Staff,
+    Student,
+    utcnow,
+)
 from app.db.session import get_session
 
 # Кеш результатов валидации: HMAC на каждый запрос списка — расточительно
@@ -39,6 +51,12 @@ def _cached_validate(raw: str) -> InitData:
     now = time.monotonic()
     hit = _init_cache.get(raw)
     if hit and now - hit[0] < _CACHE_TTL:
+        # Срок подписи сверяется и для кешированной: иначе кеш продлевал бы
+        # её до 65 минут вместо часа
+        ttl = settings.INIT_DATA_TTL_SECONDS
+        if ttl > 0 and not raw.startswith("dev:") and time.time() - hit[1].auth_date > ttl:
+            _init_cache.pop(raw, None)
+            raise InitDataError("initData протух")
         return hit[1]
 
     if raw.startswith("dev:"):
@@ -189,6 +207,44 @@ async def require_staff(
             detail={"code": "FORBIDDEN", "message": "Нужны права сотрудника"},
         )
     return current
+
+
+# ── Кто что может (решение 068) ───────────────────────────────────
+# Роль — из справочника сотрудников, проверяется по действию, а не только
+# «сотрудник или нет». Машина состояний (engine.py) знает допустимые переходы,
+# а кто их делает — решают эти наборы.
+REQUEST_ROLES = frozenset({ROLE_CLERK, ROLE_HEAD, ROLE_ADMIN})  # очередь заявок, статусы
+ISSUER_ROLES = frozenset({ROLE_HEAD, ROLE_ADMIN})  # подпись («Готова») и выдача документа
+EVENT_ROLES = frozenset({ROLE_ORGANIZER, ROLE_ADMIN})  # события календаря для всех
+MODERATOR_ROLES = frozenset({ROLE_MODERATOR, ROLE_ADMIN})  # чужие публикации
+PUBLISHER_ROLES = EVENT_ROLES | MODERATOR_ROLES  # возможности — сразу в ленту
+
+
+def require_role(current: CurrentUser, roles: frozenset[str], action: str) -> None:
+    if not current.staff or current.staff.role not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": f"{action} — не для вашей роли"},
+        )
+
+
+def require_public_publishing(current: CurrentUser, roles: frozenset[str], action: str) -> None:
+    """Публикация для всех: роль из справочника и не демо-стенд.
+
+    На демо-стенде коды сотрудников опубликованы в README, а роль деканата
+    включается в один тап, — такая роль ничего не доказывает. Событие или
+    одобренная ею возможность попали бы в афишу каждому эксперту.
+    """
+    if settings.DEMO_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "DEMO_READ_ONLY",
+                "message": f"{action}: на демо-стенде коды сотрудников общие, "
+                           "публиковать для всех нельзя",
+            },
+        )
+    require_role(current, roles, action)
 
 
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]

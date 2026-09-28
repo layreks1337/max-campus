@@ -5,10 +5,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Общее ─────────────────────────────────────────────────────────
+
+
+def _web_url(value: str, *, allow_path: bool = False) -> str:
+    """Ссылка из пользовательского ввода: только http(s), для обложек — ещё путь
+    на своём сервере. `javascript:` и прочие схемы в ленту для всех не попадут."""
+    value = value.strip()
+    if not value:
+        return ""
+    low = value.lower()
+    if low.startswith(("https://", "http://")):
+        return value
+    if allow_path and value.startswith("/") and not value.startswith("//"):
+        return value
+    raise ValueError("ссылка должна начинаться с https:// или http://")
 
 
 class ErrorBody(BaseModel):
@@ -149,8 +163,9 @@ class CreateRequestIn(BaseModel):
 
 
 class TransitionIn(BaseModel):
-    to_status: str
-    comment: str = ""
+    to_status: str = Field(max_length=32)
+    # Комментарий уходит студенту в чат («Что нужно: …») — длина ограничена
+    comment: str = Field(default="", max_length=500)
 
 
 class AnswerInfoIn(BaseModel):
@@ -179,16 +194,21 @@ class EventOut(BaseModel):
 
 
 class EventCreateIn(BaseModel):
-    title: str
-    description: str = ""
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(default="", max_length=4000)
     kind: str = "MEETING"
     starts_at: datetime
     ends_at: datetime | None = None
-    location: str = ""
-    cover_url: str = ""
-    capacity: int = 0
+    location: str = Field(default="", max_length=200)
+    cover_url: str = Field(default="", max_length=500)
+    capacity: int = Field(default=0, ge=0)
     registration_required: bool = False
     audience: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("cover_url")
+    @classmethod
+    def _cover(cls, v: str) -> str:
+        return _web_url(v, allow_path=True)
 
 
 # ── Возможности ───────────────────────────────────────────────────
@@ -220,16 +240,21 @@ class OpportunityOut(BaseModel):
 
 class OpportunityCreateIn(BaseModel):
     title: str = Field(min_length=3, max_length=200)
-    description: str = ""
-    kind: str = "HACKATHON"
-    level: str = "CITY"
-    organizer: str = ""
-    url: str = ""
+    description: str = Field(default="", max_length=4000)
+    kind: str = Field(default="HACKATHON", max_length=32)
+    level: str = Field(default="CITY", max_length=32)
+    organizer: str = Field(default="", max_length=200)
+    url: str = Field(default="", max_length=500)
     registration_deadline: datetime | None = None
-    team_size_min: int = 1
-    team_size_max: int = 1
-    prize_text: str = ""
-    tags: list[str] = Field(default_factory=list)
+    team_size_min: int = Field(default=1, ge=1, le=50)
+    team_size_max: int = Field(default=1, ge=1, le=50)
+    prize_text: str = Field(default="", max_length=300)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        return _web_url(v)
 
 
 class InterestIn(BaseModel):
@@ -260,10 +285,10 @@ class IntentOut(BaseModel):
 
 
 class IntentCreateIn(BaseModel):
-    kind: str = "STUDY_BUDDY"
+    kind: str = Field(default="STUDY_BUDDY", max_length=32)
     title: str = Field(min_length=3, max_length=160)
-    description: str = ""
-    tags: list[str] = Field(default_factory=list)
+    description: str = Field(default="", max_length=1000)
+    tags: list[str] = Field(default_factory=list, max_length=20)
 
 
 class SwipeIn(BaseModel):

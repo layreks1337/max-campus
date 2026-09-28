@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import logging
-import time
+import shutil
 import uuid as uuid_lib
-from collections import defaultdict
 from datetime import timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, Request as HttpRequest, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +24,7 @@ from app.api.schemas import (
 from app.core.config import settings
 from app.core.dates import local
 from app.core.deps import BoundUserDep, CurrentUser, CurrentUserDep, SessionDep
+from app.core.limits import SlidingWindow, client_ip
 from app.db.models import (
     ACTIVE_STATUSES,
     MOD_APPROVED,
@@ -49,10 +49,16 @@ from app.modules.match.service import audience_matches
 log = logging.getLogger("api.core")
 router = APIRouter(tags=["core"])
 
-# Ограничение попыток ввода кода: иначе подбирается за минуту
-_attempts: dict[int, list[float]] = defaultdict(list)
-_MAX_ATTEMPTS = 5
-_WINDOW = 3600.0
+# Ограничение попыток ввода кода: 5 в час на аккаунт. Тестовые id dev-входа
+# придумываются без счёта, поэтому ещё и 20 неудачных попыток в час с одного
+# адреса — перебор с одной машины упирается в них, а не в число аккаунтов.
+_attempts = SlidingWindow(5, 3600)
+_failed_by_ip = SlidingWindow(20, 3600)
+
+_RATE_LIMITED = HTTPException(
+    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+    detail={"code": "RATE_LIMITED", "message": "Слишком много попыток. Попробуйте через час."},
+)
 
 
 @router.get("/me", response_model=MeOut, summary="Профиль текущего пользователя")
@@ -82,25 +88,24 @@ async def get_me(current: CurrentUserDep) -> MeOut:
 
 
 @router.post("/binding/claim", response_model=MeOut, summary="Привязать студенческий по коду")
-async def claim_binding(body: BindRequest, current: CurrentUserDep, session: SessionDep) -> MeOut:
+async def claim_binding(
+    body: BindRequest, request: HttpRequest, current: CurrentUserDep, session: SessionDep
+) -> MeOut:
     if current.is_bound:
         return await get_me(current)
 
     uid = current.app_user.max_user_id
-    now = time.monotonic()
-    _attempts[uid] = [t for t in _attempts[uid] if now - t < _WINDOW]
-    if len(_attempts[uid]) >= _MAX_ATTEMPTS:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"code": "RATE_LIMITED", "message": "Слишком много попыток. Попробуйте через час."},
-        )
-    _attempts[uid].append(now)
+    ip = client_ip(request)
+    if (ip is not None and not _failed_by_ip.allowed(ip)) or not _attempts.take(uid):
+        raise _RATE_LIMITED
 
     code = body.code.strip().upper().replace(" ", "")
     res = await session.execute(select(BindingCode).where(BindingCode.code == code))
     bc = res.scalar_one_or_none()
 
     if bc is None or bc.used_at is not None or bc.expires_at < utcnow():
+        if ip is not None:
+            _failed_by_ip.hit(ip)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "BAD_CODE", "message": "Код не найден или уже использован"},
@@ -117,7 +122,7 @@ async def claim_binding(body: BindRequest, current: CurrentUserDep, session: Ses
     bc.used_at = utcnow()
     await session.flush()
 
-    _attempts.pop(uid, None)
+    _attempts.forget(uid)
     # Именно session.get(Student, ...), а не через bc.student: обращение к ленивой
     # связи в async-контексте поднимает MissingGreenlet.
     current.student = await session.get(Student, bc.student_id)
@@ -178,7 +183,7 @@ def _require_demo_mode() -> None:
 
 
 @router.post("/binding/demo", response_model=MeOut, summary="Демо-вход: своя копия демо-студента")
-async def claim_demo(current: CurrentUserDep, session: SessionDep) -> MeOut:
+async def claim_demo(request: HttpRequest, current: CurrentUserDep, session: SessionDep) -> MeOut:
     """Вход без кода привязки: аккаунт получает свою копию демо-студента.
 
     Копия одна на аккаунт и не кончается: уже привязанный аккаунт (копией или
@@ -189,7 +194,7 @@ async def claim_demo(current: CurrentUserDep, session: SessionDep) -> MeOut:
     if current.is_bound:
         return await get_me(current)
 
-    if not demo.take_slot():
+    if not demo.take_slot(current.app_user.max_user_id, client_ip(request)):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
@@ -252,26 +257,66 @@ async def claim_demo_staff(current: CurrentUserDep, session: SessionDep) -> MeOu
     return await _grant_staff(current, session, STAFF_CODES[demo.DEMO_STAFF_CODE])
 
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+_UPLOAD_CHUNK = 256 * 1024
+# Сколько места на диске оставить свободным всегда: базе, логам и ночной копии
+_MIN_FREE_DISK_BYTES = 1024 * 1024 * 1024
+
+
+def _upload_error(code: str, message: str, http: int = status.HTTP_400_BAD_REQUEST) -> HTTPException:
+    return HTTPException(status_code=http, detail={"code": code, "message": message})
+
+
+def _check_upload_quota(student_id: int) -> None:
+    """Квота вложений: на студента, на весь сервер и по свободному месту.
+
+    Файлы вложений не удаляются (на них ссылаются заявки), поэтому без квоты
+    скрипт с демо-аккаунтов за вечер забил бы диск стенда вместе с базой.
+    """
+    folder = settings.uploads_dir
+    mine = sum(1 for _ in folder.glob(f"{student_id}_*"))
+    if mine >= settings.UPLOADS_PER_STUDENT:
+        raise _upload_error(
+            "UPLOAD_QUOTA",
+            f"Уже загружено {mine} файлов — больше нельзя. Приложите нужный к новой заявке.",
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    total = sum(f.stat().st_size for f in folder.iterdir() if f.is_file())
+    free = shutil.disk_usage(folder).free
+    if total >= settings.UPLOADS_TOTAL_MB * 1024 * 1024 or free < _MIN_FREE_DISK_BYTES:
+        log.warning("Хранилище вложений заполнено: %s МБ, свободно %s МБ",
+                    total // 2**20, free // 2**20)
+        raise _upload_error(
+            "STORAGE_FULL",
+            "Хранилище файлов заполнено. Подайте заявку без вложения или попробуйте позже.",
+            status.HTTP_507_INSUFFICIENT_STORAGE,
+        )
+
+
 @router.post("/uploads", summary="Загрузить файл для поля формы")
 async def upload(file: UploadFile, current: BoundUserDep) -> dict:
     allowed = {".pdf", ".jpg", ".jpeg", ".png", ".heic", ".webp"}
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "BAD_FILE_TYPE", "message": "Допустимы PDF и изображения"},
-        )
+        raise _upload_error("BAD_FILE_TYPE", "Допустимы PDF и изображения")
+    _check_upload_quota(current.student.id)
 
-    data = await file.read()
-    if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "FILE_TOO_LARGE", "message": "Файл больше 10 МБ"},
-        )
-
+    # Кусками и с лимитом: файл целиком в память не читается, а слишком большой
+    # не остаётся на диске. Тело запроса и так не больше 11 МБ (main.py).
     stored = f"{current.student.id}_{uuid_lib.uuid4().hex[:12]}{suffix}"
-    (settings.uploads_dir / stored).write_bytes(data)
-    return {"file": stored, "original_name": file.filename, "size": len(data)}
+    target = settings.uploads_dir / stored
+    size = 0
+    try:
+        with target.open("wb") as out:
+            while chunk := await file.read(_UPLOAD_CHUNK):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise _upload_error("FILE_TOO_LARGE", "Файл больше 10 МБ")
+                out.write(chunk)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return {"file": stored, "original_name": file.filename, "size": size}
 
 
 @router.get("/home", response_model=HomeOut, summary="Данные главного экрана")

@@ -667,7 +667,7 @@ async def create_poll(body: PollIn, current: BoundUserDep, session: SessionDep) 
         raise HTTPException(403, detail={"code": "FORBIDDEN", "message": "Опросы создаёт староста группы"})
     options = [o.strip() for o in body.options if o.strip()]
     if len(options) < 2:
-        raise HTTPException(422, detail={"code": "VALIDATION", "message": "Нужно хотя бы два варианта"})
+        raise HTTPException(422, detail={"code": "VALIDATION_FAILED", "message": "Нужно хотя бы два варианта"})
     poll = GroupPoll(
         group_name=st.group_name, author_student_id=st.id, question=body.question.strip(),
         options=options, event_id=body.event_id, closes_at=utcnow() + timedelta(days=3),
@@ -704,7 +704,7 @@ async def vote(poll_id: int, body: VoteIn, current: BoundUserDep, session: Sessi
     if poll is None or poll.group_name != current.student.group_name:
         raise _not_found("Опрос не найден")
     if body.option_idx >= len(poll.options):
-        raise HTTPException(422, detail={"code": "VALIDATION", "message": "Нет такого варианта"})
+        raise HTTPException(422, detail={"code": "VALIDATION_FAILED", "message": "Нет такого варианта"})
     res = await session.execute(
         select(PollVote).where(PollVote.poll_id == poll.id, PollVote.student_id == current.student.id)
     )

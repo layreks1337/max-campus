@@ -19,8 +19,17 @@ from app.api.schemas import (
     OpportunityCreateIn,
     OpportunityOut,
 )
+from app.core.config import settings
 from app.core.dates import when_ru
-from app.core.deps import BoundUserDep, SessionDep, StaffUserDep
+from app.core.deps import (
+    EVENT_ROLES,
+    MODERATOR_ROLES,
+    PUBLISHER_ROLES,
+    BoundUserDep,
+    SessionDep,
+    StaffUserDep,
+    require_public_publishing,
+)
 from app.db.models import (
     MOD_APPROVED,
     MOD_PENDING,
@@ -216,6 +225,9 @@ async def unregister_event(
 async def create_event(
     body: EventCreateIn, current: StaffUserDep, session: SessionDep
 ) -> EventOut:
+    """Событие публикуется сразу для всех своей аудитории — только организатору
+    из справочника и не на демо-стенде (решение 068)."""
+    require_public_publishing(current, EVENT_ROLES, "Создать событие")
     event = CalendarEvent(
         title=body.title,
         description=body.description,
@@ -319,8 +331,15 @@ async def list_opportunities(
 async def create_opportunity(
     body: OpportunityCreateIn, current: BoundUserDep, session: SessionDep
 ) -> OpportunityOut:
-    """Пользовательский контент уходит на модерацию — иначе спам и реклама."""
+    """Пользовательский контент уходит на модерацию — иначе спам и реклама.
+
+    Сразу в ленту — только организатору или модератору из справочника, и не на
+    демо-стенде: там коды сотрудников общие, и «от сотрудника» ничего не значит.
+    """
     is_staff = current.is_staff
+    publishes = (
+        is_staff and current.staff.role in PUBLISHER_ROLES and not settings.DEMO_MODE
+    )
     opp = Opportunity(
         title=body.title,
         description=body.description,
@@ -335,7 +354,7 @@ async def create_opportunity(
         tags=body.tags,
         source="STAFF" if is_staff else "STUDENT",
         author_user_id=current.app_user.id,
-        moderation_status=MOD_APPROVED if is_staff else MOD_PENDING,
+        moderation_status=MOD_APPROVED if publishes else MOD_PENDING,
     )
     session.add(opp)
     await session.flush()
@@ -405,6 +424,7 @@ moderation_router = APIRouter(prefix="/moderation", tags=["moderation"])
 async def moderation_queue(
     current: StaffUserDep, session: SessionDep
 ) -> list[OpportunityOut]:
+    require_public_publishing(current, MODERATOR_ROLES, "Модерация")
     res = await session.execute(
         select(Opportunity)
         .where(Opportunity.moderation_status == MOD_PENDING)
@@ -420,6 +440,7 @@ async def moderate(
     current: StaffUserDep,
     session: SessionDep,
 ) -> Ok:
+    require_public_publishing(current, MODERATOR_ROLES, "Модерация")
     opp = await session.get(Opportunity, opp_id)
     if opp is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Не найдено"})

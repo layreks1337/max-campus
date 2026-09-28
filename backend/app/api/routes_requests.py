@@ -16,18 +16,27 @@ from app.api.schemas import (
     TemplateOut,
     TransitionIn,
 )
-from app.core.deps import BoundUserDep, SessionDep, StaffUserDep
+from app.core.deps import (
+    ISSUER_ROLES,
+    REQUEST_ROLES,
+    BoundUserDep,
+    SessionDep,
+    StaffUserDep,
+    require_role,
+)
 from app.db.models import (
     ACTIVE_STATUSES,
     ST_CANCELLED,
     ST_IN_REVIEW,
+    ST_ISSUED,
     ST_NEEDS_INFO,
+    ST_READY,
     AuditLog,
     Request,
     RequestTemplate,
     utcnow,
 )
-from app.modules.demo.service import is_demo
+from app.modules.demo.service import demo_student_ids, is_demo
 from app.modules.notify.service import enqueue
 from app.modules.requests import engine, service
 
@@ -202,14 +211,18 @@ async def answer_info(
 
 
 def _staff_scope(stmt, current):
-    """Демо-профиль в роли деканата видит только заявки своей копии.
+    """Какие заявки видит сотрудник. Заодно — проверка, что роль работает с заявками.
 
-    Копии названы по профилям MAX: общая очередь показала бы одному эксперту
-    имена и заявки остальных. Заодно эксперт сразу находит свою заявку.
+    Демо-профиль в роли деканата — только заявки своей копии: эксперт сразу
+    находит свою заявку. Остальные сотрудники — все заявки, кроме демо-копий.
+    Копии названы по профилям MAX, то есть настоящими именами экспертов, а коды
+    STAFF-001/002 опубликованы: иначе любой, введя код, читал бы чужие заявки
+    с именами и PDF и писал бы экспертам в чат от имени бота.
     """
+    require_role(current, REQUEST_ROLES, "Очередь заявок")
     if is_demo(current.student):
         return stmt.where(Request.student_id == current.student.id)
-    return stmt
+    return stmt.where(Request.student_id.not_in(demo_student_ids()))
 
 
 @staff_router.get("", response_model=list[RequestOut], summary="Очередь заявок")
@@ -244,6 +257,14 @@ async def staff_transition(
     req = res.unique().scalar_one_or_none()
     if req is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Не найдена"})
+    if body.to_status == ST_ISSUED and req.status == ST_READY:
+        # Переход допустим, но без PDF: документ формирует только выдача
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "BAD_TRANSITION", "message": "Выдать документ — кнопкой «Выдать документ»"},
+        )
+    if body.to_status == ST_READY:
+        require_role(current, ISSUER_ROLES, "Подписать документ")
 
     try:
         await engine.transition(
@@ -294,6 +315,7 @@ async def staff_issue(
     req = res.unique().scalar_one_or_none()
     if req is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Не найдена"})
+    require_role(current, ISSUER_ROLES, "Выдать документ")
 
     try:
         document = await service.issue_document(session, req, issuer=current.staff.full_name)

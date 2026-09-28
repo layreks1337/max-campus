@@ -29,6 +29,7 @@ from app.api import (
     routes_requests,
 )
 from app.core.config import settings
+from app.core.limits import BodySizeLimit
 from app.db.models import Base
 from app.db.session import SessionLocal, engine
 from app.seed import index_knowledge_if_needed, run_seed
@@ -136,6 +137,19 @@ app = FastAPI(
 )
 
 
+# ── Размер тела запроса ───────────────────────────────────────────
+# Обычный запрос — килобайты JSON, вебхук MAX — тоже. Мегабайта хватает с
+# запасом; вложение к заявке — до 10 МБ плюс обёртка multipart.
+MAX_BODY_BYTES = 1024 * 1024
+MAX_UPLOAD_BODY_BYTES = 11 * 1024 * 1024
+
+app.add_middleware(
+    BodySizeLimit,
+    default=MAX_BODY_BYTES,
+    limits=(("/api/uploads", MAX_UPLOAD_BODY_BYTES),),
+)
+
+
 # ── Единый формат ошибок ──────────────────────────────────────────
 
 
@@ -147,7 +161,14 @@ async def validation_handler(request: Request, exc: RequestValidationError):
             "error": {
                 "code": "VALIDATION_FAILED",
                 "message": "Проверьте параметры запроса",
-                "details": {"errors": exc.errors()[:10]},
+                # Только сериализуемое: в ctx у ошибок своих валидаторов лежит
+                # объект исключения, и JSONResponse падал с 500 вместо 422
+                "details": {
+                    "errors": [
+                        {"loc": list(e.get("loc", ())), "msg": e.get("msg", ""), "type": e.get("type", "")}
+                        for e in exc.errors()[:10]
+                    ]
+                },
             }
         },
     )

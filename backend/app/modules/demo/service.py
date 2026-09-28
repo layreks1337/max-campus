@@ -13,13 +13,11 @@
 
 from __future__ import annotations
 
-import time
-from collections import deque
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.config import is_test_user_id, settings
+from app.core.limits import SlidingWindow
 from app.core.security import MaxUser
 from app.db.models import AppUser, Binding, GradeItem, GroupHead, Student
 from app.seed.demo import DEMO_TEMPLATE_RECORD_BOOK
@@ -33,8 +31,9 @@ DEMO_STAFF_CODE = "STAFF-002"
 # называется как шаблон: «Dev User» в справке хуже синтетической Петровой.
 _PLACEHOLDER_NAMES = {"dev", "dev user"}
 
-# Моменты создания копий за последний час — на весь процесс
-_created: deque[float] = deque()
+# Копии для тестовых id за последний час: на весь сервер и по адресу клиента
+_test_copies = SlidingWindow(settings.DEMO_COPIES_PER_HOUR, 3600)
+_test_copies_by_ip = SlidingWindow(settings.DEMO_COPIES_PER_IP_HOUR, 3600)
 
 
 class DemoUnavailable(Exception):
@@ -55,14 +54,24 @@ def demo_student_ids():
     return select(Student.id).where(demo_filter())
 
 
-def take_slot() -> bool:
-    """Занять место под новую копию в часовом лимите сервера."""
-    now = time.monotonic()
-    while _created and now - _created[0] > 3600:
-        _created.popleft()
-    if len(_created) >= settings.DEMO_COPIES_PER_HOUR:
+def take_slot(max_user_id: int, ip: str | None) -> bool:
+    """Можно ли создать ещё одну копию. Лимиты — только у тестовых id.
+
+    Раньше лимит был один на всех: 60 запросов с придуманными тестовыми id,
+    и кнопка «Попробовать как студент» отвечала 429 каждому эксперту, включая
+    вошедших из MAX, — на час, а при повторе раз в час на все две недели
+    проверки. Аккаунт MAX (подпись запуска или ссылка бота) не придумать,
+    и копия у него одна, поэтому лимит его не касается. Тестовые id — общий
+    потолок и потолок с одного адреса, чтобы один скрипт не выбрал общий.
+    Запрос без адреса (изнутри сервера: смоук-тест) — только общий потолок.
+    """
+    if not is_test_user_id(max_user_id):
+        return True
+    if not _test_copies.allowed("all"):
         return False
-    _created.append(now)
+    if ip is not None and not _test_copies_by_ip.take(ip):
+        return False
+    _test_copies.hit("all")
     return True
 
 

@@ -218,6 +218,13 @@ if status == 409:
 
 status, res = call(
     "POST", f"/api/staff/requests/{public_no}/transition", CLERK,
+    {"to_status": "IN_REVIEW", "comment": "x" * 501},
+)
+check("комментарий сотрудника длиннее 500 символов отклоняется (422)", status == 422,
+      f"получили {status}")
+
+status, res = call(
+    "POST", f"/api/staff/requests/{public_no}/transition", CLERK,
     {"to_status": "IN_REVIEW", "comment": "Документы в порядке"},
 )
 check("переход в «Принята в работу»", status == 200, str(res))
@@ -229,6 +236,8 @@ status, res = call(
 check("переход в «На подписи»", status == 200, str(res))
 
 section("7. Выдача документа и PDF")
+status, res = call("POST", f"/api/staff/requests/{public_no}/issue", CLERK)
+check("специалист (STAFF-001) документ не выдаёт (403)", status == 403, f"получили {status}")
 status, issued = call("POST", f"/api/staff/requests/{public_no}/issue", HEAD)
 check("документ выдан", status == 200, str(issued))
 
@@ -456,6 +465,21 @@ except urllib.error.HTTPError as exc:
 check("вебхук с чужим секретом отклоняется (403)", status == 403,
       f"получили {status} — задан ли MAX_WEBHOOK_SECRET?")
 
+# Тело больше лимита не читается в память целиком: 413 ещё до обработчика.
+# Вебхук — без авторизации, раньше он принимал и 600 МБ.
+big = urllib.request.Request(
+    f"{BASE}/webhook/max", data=b"{" + b" " * (2 * 1024 * 1024) + b"}", method="POST",
+    headers={"Content-Type": "application/json"},
+)
+try:
+    with urllib.request.urlopen(big, timeout=60) as resp:
+        status = resp.status
+except urllib.error.HTTPError as exc:
+    status = exc.code
+except (urllib.error.URLError, ConnectionError) as exc:
+    status = f"соединение оборвано: {exc}"
+check("запрос больше 1 МБ отклоняется (413)", status == 413, f"получили {status}")
+
 section("14. Демо-вход для экспертов")
 # Свой id и имя: копия называется по профилю MAX. Id фиксированный — повторный
 # прогон получает ту же копию, а reset_demo.sh её удаляет.
@@ -519,6 +543,22 @@ if public_no:
         {"to_status": "IN_REVIEW", "comment": ""},
     )
     check("чужую заявку демо-деканат не видит (404)", status == 404, f"получили {status}")
+
+status, cqueue = call("GET", "/api/staff/requests?status=ISSUED", CLERK)
+check("сотрудник по публичному коду не видит заявок демо-копий",
+      status == 200 and isinstance(cqueue, list) and bool(demo_no)
+      and all(r["public_no"] != demo_no and r.get("student_name") != DEMO_EXPERT_NAME for r in cqueue),
+      f"{status} {str(cqueue)[:160]}")
+
+# Публикация для всех на демо-стенде закрыта: коды сотрудников общие
+status, res = call("POST", "/api/events", DEMO_EXPERT,
+                   {"title": "Smoke", "starts_at": "2030-01-01T10:00:00+08:00"})
+check("демо-деканат не публикует события (403)", status == 403, f"получили {status}")
+status, res = call("GET", "/api/moderation/queue", DEMO_EXPERT)
+check("демо-деканат не модерирует (403)", status == 403, f"получили {status}")
+status, res = call("POST", "/api/opportunities", DEMO_EXPERT,
+                   {"title": "Smoke", "url": "javascript:alert(1)"})
+check("ссылка javascript: в возможности отклоняется (422)", status == 422, f"получили {status}")
 
 if demo_auto:
     check("демо-студент получил справку", bool(dreq.get("document")), str(dreq)[:200])
