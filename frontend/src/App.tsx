@@ -181,7 +181,7 @@ export default function App() {
           <Route path="/requests/new" element={<RequestNew />} />
           <Route path="/requests/new/:key" element={<RequestNew />} />
           <Route path="/requests/:no" element={<RequestDetail />} />
-          <Route path="/people" element={<People />} />
+          <Route path="/people" element={<People me={me} />} />
           <Route path="/chat" element={<Chat me={me} />} />
           <Route path="/staff" element={<Staff me={me} onChange={setMe} />} />
           <Route path="/profile" element={<Profile me={me} onChange={setMe} />} />

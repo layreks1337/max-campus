@@ -560,6 +560,21 @@ status, res = call("POST", "/api/opportunities", DEMO_EXPERT,
                    {"title": "Smoke", "url": "javascript:alert(1)"})
 check("ссылка javascript: в возможности отклоняется (422)", status == 422, f"получили {status}")
 
+# Колода демо-стенда: только синтетические авторы, их ответ смоделирован
+status, ddeck = call("GET", "/api/match/deck", DEMO_EXPERT)
+own_intent = globals().get("intent")  # «ищу команду» студента из раздела 10
+own_intent_id = own_intent.get("id") if isinstance(own_intent, dict) else None
+check("в колоде нет объявлений живых аккаунтов",
+      status == 200 and isinstance(ddeck, list) and len(ddeck) > 0
+      and all(c["id"] != own_intent_id for c in ddeck),
+      f"{status} карточек: {len(ddeck) if isinstance(ddeck, list) else ddeck}")
+if isinstance(ddeck, list) and ddeck:
+    status, dsw = call("POST", "/api/match/swipe", DEMO_EXPERT,
+                       {"intent_id": ddeck[0]["id"], "decision": "LIKE"})
+    check("отклик синтетическому автору — смоделированная пара без контакта",
+          status == 200 and isinstance(dsw, dict) and dsw.get("matched") and dsw.get("simulated")
+          and not dsw.get("match_username"), f"{status} {dsw}")
+
 if demo_auto:
     check("демо-студент получил справку", bool(dreq.get("document")), str(dreq)[:200])
 elif demo_no:

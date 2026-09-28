@@ -308,12 +308,14 @@ export function IntentCard({ intent }: { intent: Intent }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col justify-between p-6 pt-5">
-        <div className="min-h-0">
+        {/* overflow-hidden и теги в одну строку: на экране 360 px вторая строка
+            тегов наезжала на автора внизу карточки */}
+        <div className="min-h-0 overflow-hidden">
           <p className="mb-4 line-clamp-5 text-[15px] leading-relaxed text-muted">
             {intent.description}
           </p>
           {intent.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex gap-1.5 overflow-hidden">
               {intent.tags.slice(0, 4).map((t) => (
                 <Chip key={t} tone="soft">
                   #{t}

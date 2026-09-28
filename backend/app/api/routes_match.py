@@ -60,10 +60,12 @@ async def swipe(body: SwipeIn, current: BoundUserDep, session: SessionDep) -> Sw
 
     other_id = pair.b_user_id if pair.a_user_id == current.app_user.id else pair.a_user_id
     other = await session.get(AppUser, other_id)
+    simulated = match_service.is_synthetic(other)
     return SwipeOut(
         matched=True,
         match_name=other.display_name if other else None,
-        match_username=other.username if other else None,
+        match_username=None if simulated or other is None else other.username,
+        simulated=simulated,
     )
 
 
@@ -98,15 +100,18 @@ async def my_matches(current: BoundUserDep, session: SessionDep) -> list[MatchOu
             intent = await session.get(Intent, p.intent_id)
             if intent:
                 about = intent.title
+        simulated = match_service.is_synthetic(user)
         out.append(
             MatchOut(
                 id=p.id,
                 origin=p.origin,
                 partner_name=user.display_name,
-                partner_username=user.username or "",
+                # @demo_… в MAX не существует — кнопку «Написать» не показываем
+                partner_username="" if simulated else (user.username or ""),
                 partner_photo=user.photo_url or "",
                 about=about,
                 created_at=p.created_at,
+                simulated=simulated,
             )
         )
     return out
@@ -188,10 +193,10 @@ async def save_profile(
     p.visible = body.visible
     await session.flush()
 
-    # Попросил наставника — пробуем подобрать сразу, не дожидаясь фонового прохода
+    # Попросил наставника — подбираем сразу ему, не дожидаясь фонового прохода
     if body.wants_mentor:
         try:
-            await match_service.run_buddy_matcher(session, limit=5)
+            await match_service.run_buddy_matcher(session, seeker_user_id=current.app_user.id)
         except Exception:
             log.exception("Не удалось подобрать наставника сразу")
 

@@ -202,6 +202,8 @@ export interface Match {
   partner_photo: string;
   about: string;
   created_at: string;
+  /** Партнёр — синтетический студент демо-стенда: отклик смоделирован, контакта нет */
+  simulated?: boolean;
 }
 
 export interface MatchProfile {

@@ -183,7 +183,7 @@ export const api = {
   // ── Матчинг ────────────────────────────────────────────────────
   deck: () => get<Intent[]>("/match/deck"),
   swipe: (intent_id: number, decision: "LIKE" | "SKIP") =>
-    post<{ matched: boolean; match_name?: string; match_username?: string }>("/match/swipe", {
+    post<{ matched: boolean; match_name?: string; match_username?: string; simulated?: boolean }>("/match/swipe", {
       intent_id,
       decision,
     }),

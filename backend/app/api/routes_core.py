@@ -44,7 +44,7 @@ from app.db.models import (
 )
 from app.modules.demo import service as demo
 from app.modules.feed.scoring import score_opportunity
-from app.modules.match.service import audience_matches
+from app.modules.match.service import audience_matches, deck_filter
 
 log = logging.getLogger("api.core")
 router = APIRouter(tags=["core"])
@@ -390,12 +390,11 @@ async def home(current: BoundUserDep, session: SessionDep) -> HomeOut:
         serializers.opportunity_out(o, interests.get(o.id), sc) for o, sc in scored
     ]
 
-    # Размер колоды
+    # Размер колоды — по тем же правилам, что и сама колода
     res = await session.execute(
         select(func.count(Intent.id))
         .where(
-            Intent.active.is_(True),
-            Intent.author_user_id != current.app_user.id,
+            *deck_filter(current.app_user.id),
             ~Intent.id.in_(
                 select(Swipe.intent_id).where(Swipe.actor_user_id == current.app_user.id)
             ),

@@ -1,4 +1,12 @@
-"""Матчинг: колода интентов, свайпы, взаимные отклики, buddy-автоматч."""
+"""Матчинг: колода интентов, свайпы, взаимные отклики, buddy-автоматч.
+
+Демо-стенд (DEMO_MODE, решение 069). Объявления в колоде — от синтетических
+студентов (max_user_id < 0); объявления живых аккаунтов видит только автор:
+иначе любой анонимный браузер писал бы в общую колоду всех экспертов, а демо-копии
+показывали бы друг другу настоящие имена из MAX. Синтетический автор ответить
+сам не может, поэтому его ответ на отклик смоделирован: пара создаётся сразу и
+помечена как демо, контакта в MAX у такого автора нет.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +16,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.models import (
     AppUser,
     Binding,
@@ -40,6 +49,23 @@ def audience_matches(audience: dict, student: Student) -> bool:
     if audience.get("only_freshmen") and student.course != 1:
         return False
     return True
+
+
+def synthetic_users():
+    """Подзапрос id синтетических аккаунтов сида: в MAX их нет, id отрицательные."""
+    return select(AppUser.id).where(AppUser.max_user_id < 0)
+
+
+def deck_filter(app_user_id: int) -> list:
+    """Условия «объявление можно показать в колоде этому пользователю»."""
+    conditions = [Intent.active.is_(True), Intent.author_user_id != app_user_id]
+    if settings.DEMO_MODE:
+        conditions.append(Intent.author_user_id.in_(synthetic_users()))
+    return conditions
+
+
+def is_synthetic(user: AppUser | None) -> bool:
+    return user is not None and user.max_user_id < 0
 
 
 def score_intent(
@@ -88,11 +114,7 @@ async def get_deck(
     swiped = select(Swipe.intent_id).where(Swipe.actor_user_id == app_user_id)
     res = await session.execute(
         select(Intent)
-        .where(
-            Intent.active.is_(True),
-            Intent.author_user_id != app_user_id,
-            Intent.id.not_in(swiped),
-        )
+        .where(*deck_filter(app_user_id), Intent.id.not_in(swiped))
         .order_by(Intent.created_at.desc())
         .limit(120)
     )
@@ -153,17 +175,29 @@ async def register_swipe(
 
     author_id = intent.author_user_id
 
-    # Взаимность: автор интента лайкнул что-то из моих интентов
-    my_intents = select(Intent.id).where(Intent.author_user_id == app_user_id)
+    # Синтетический автор сам не свайпает — его ответ смоделирован (решение 069)
+    author = await session.get(AppUser, author_id)
+    if not is_synthetic(author):
+        # Взаимность: автор интента лайкнул что-то из моих интентов
+        my_intents = select(Intent.id).where(Intent.author_user_id == app_user_id)
+        res = await session.execute(
+            select(Swipe).where(
+                Swipe.actor_user_id == author_id,
+                Swipe.decision == "LIKE",
+                Swipe.intent_id.in_(my_intents),
+            )
+        )
+        if res.scalars().first() is None:
+            return None
+
     res = await session.execute(
-        select(Swipe).where(
-            Swipe.actor_user_id == author_id,
-            Swipe.decision == "LIKE",
-            Swipe.intent_id.in_(my_intents),
+        select(MatchPair.id).where(
+            MatchPair.a_user_id == min(app_user_id, author_id),
+            MatchPair.b_user_id == max(app_user_id, author_id),
+            MatchPair.intent_id == intent_id,
         )
     )
-    reciprocal = res.scalars().first()
-    if reciprocal is None:
+    if res.first() is not None:
         return None
 
     pair = MatchPair(
@@ -191,7 +225,12 @@ async def _notify_match(
         me_user, other_user = users.get(me), users.get(other)
         if not me_user or not other_user:
             continue
-        handle = f"@{other_user.username}" if other_user.username else "загляни в приложение"
+        if is_synthetic(other_user):
+            handle = "это демо-студент, в MAX такого аккаунта нет — отклик смоделирован"
+        elif other_user.username:
+            handle = f"@{other_user.username}"
+        else:
+            handle = "загляни в приложение"
         await enqueue(
             session,
             max_user_id=me_user.max_user_id,
@@ -206,26 +245,41 @@ async def _notify_match(
         )
 
 
-async def run_buddy_matcher(session: AsyncSession, limit: int = 20) -> int:
+async def run_buddy_matcher(
+    session: AsyncSession, limit: int = 20, seeker_user_id: int | None = None
+) -> int:
     """Назначает первокурсникам наставников-старшекурсников.
 
-    Страховка от пустой колоды: матч гарантирован даже когда в базе три человека.
+    Страховка от пустой колоды: наставник находится, пока есть свободный.
+    seeker_user_id — подобрать только этому пользователю (сразу после «хочу
+    наставника»). Без него раньше брались первые `limit` ищущих, включая уже
+    получивших наставника, и новый человек мог не попасть в выборку вовсе.
     """
-    res = await session.execute(
+    res = await session.execute(select(MatchPair).where(MatchPair.origin == "BUDDY"))
+    existing = list(res.scalars())
+    paired_users = {p.a_user_id for p in existing} | {p.b_user_id for p in existing}
+
+    stmt = (
         select(MatchProfile, Student, AppUser)
         .join(AppUser, AppUser.id == MatchProfile.app_user_id)
         .join(Binding, Binding.app_user_id == MatchProfile.app_user_id)
         .join(Student, Student.id == Binding.student_id)
         .where(MatchProfile.wants_mentor.is_(True), MatchProfile.visible.is_(True))
-        .limit(limit)
     )
+    if seeker_user_id is not None:
+        stmt = stmt.where(MatchProfile.app_user_id == seeker_user_id)
+    elif paired_users:
+        stmt = stmt.where(MatchProfile.app_user_id.not_in(paired_users))
+    res = await session.execute(stmt.limit(limit))
     seekers = list(res.all())
     if not seekers:
         return 0
 
     # Демо-копии экспертов наставниками не назначаются: иначе бот знакомил бы
-    # экспертов друг с другом и раздавал их @username
-    res = await session.execute(
+    # экспертов друг с другом и раздавал их @username. На демо-стенде — вообще
+    # только синтетические наставники: коды привязки там общие, и вошедший по
+    # коду старшекурсника эксперт получил бы в подопечные других экспертов.
+    stmt = (
         select(MatchProfile, Student, AppUser)
         .join(AppUser, AppUser.id == MatchProfile.app_user_id)
         .join(Binding, Binding.app_user_id == MatchProfile.app_user_id)
@@ -236,16 +290,21 @@ async def run_buddy_matcher(session: AsyncSession, limit: int = 20) -> int:
             ~demo_filter(),
         )
     )
-    mentors = list(res.all())
+    if settings.DEMO_MODE:
+        stmt = stmt.where(AppUser.max_user_id < 0)
+    mentors = list((await session.execute(stmt)).all())
     if not mentors:
         return 0
 
-    res = await session.execute(select(MatchPair).where(MatchPair.origin == "BUDDY"))
-    existing = list(res.scalars())
-    paired_users = {p.a_user_id for p in existing} | {p.b_user_id for p in existing}
+    # Нагрузка наставника — только настоящими подопечными. Синтетический
+    # наставник живых подопечных не «тратит»: он смоделирован (решение 069),
+    # а с квотой 2 на троих наставников его получили бы три эксперта из всех.
+    synthetic = {row[0] for row in (await session.execute(synthetic_users())).all()}
     mentor_load: dict[int, int] = {}
     for p in existing:
-        for uid in (p.a_user_id, p.b_user_id):
+        for uid, other in ((p.a_user_id, p.b_user_id), (p.b_user_id, p.a_user_id)):
+            if uid in synthetic and other not in synthetic:
+                continue
             mentor_load[uid] = mentor_load.get(uid, 0) + 1
 
     created = 0
@@ -255,10 +314,12 @@ async def run_buddy_matcher(session: AsyncSession, limit: int = 20) -> int:
 
         best = None
         best_score = -100.0
+        seeker_is_live = s_user.id not in synthetic
         for m_profile, m_student, m_user in mentors:
             if m_user.id == s_user.id:
                 continue
-            if mentor_load.get(m_user.id, 0) >= (m_profile.mentee_quota or 2):
+            simulated = m_user.id in synthetic and seeker_is_live
+            if not simulated and mentor_load.get(m_user.id, 0) >= (m_profile.mentee_quota or 2):
                 continue
             score = 0.0
             if m_student.faculty == s_student.faculty:
@@ -282,9 +343,16 @@ async def run_buddy_matcher(session: AsyncSession, limit: int = 20) -> int:
                 origin="BUDDY",
             )
         )
-        mentor_load[m_user.id] = mentor_load.get(m_user.id, 0) + 1
+        mentor_synthetic = m_user.id in synthetic
+        if not (mentor_synthetic and seeker_is_live):
+            mentor_load[m_user.id] = mentor_load.get(m_user.id, 0) + 1
         paired_users.add(s_user.id)
         created += 1
+        contact = (
+            "это демо-наставник, в MAX такого аккаунта нет"
+            if mentor_synthetic
+            else f"@{m_user.username or 'смотри в приложении'}"
+        )
 
         await enqueue(
             session,
@@ -293,7 +361,7 @@ async def run_buddy_matcher(session: AsyncSession, limit: int = 20) -> int:
             text=(
                 f"🎓 Тебе назначен наставник\n\n"
                 f"{m_student.first_name}, {m_student.course} курс, {m_student.faculty}\n"
-                f"Написать: @{m_user.username or 'смотри в приложении'}\n\n"
+                f"Написать: {contact}\n\n"
                 "Можно спрашивать про пары, преподавателей и как тут всё устроено."
             ),
             dedup_key=f"buddy:{s_user.id}:{m_user.id}",

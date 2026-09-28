@@ -15,7 +15,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import { openExternal } from "@/shared/max";
-import type { Intent, Match, MatchProfile } from "@/shared/types";
+import type { Intent, Match, MatchProfile, Me } from "@/shared/types";
 import { cn, dateRu, haptic } from "@/shared/utils";
 
 type Tab = "deck" | "matches" | "profile";
@@ -29,8 +29,11 @@ const KINDS = [
   { key: "HOBBY", label: "По интересам" },
 ];
 
-export default function People() {
+export default function People({ me }: { me: Me }) {
   const [tab, setTab] = useState<Tab>("deck");
+  // Демо-стенд: колода из синтетических студентов, их ответы смоделированы
+  // (решение 069) — это видно сразу, а не только в README
+  const demo = me.features?.demo !== false;
 
   return (
     <div className="px-4 pb-28 safe-top">
@@ -41,6 +44,12 @@ export default function People() {
         <p className="text-[14px] leading-snug text-muted">
           Только подтверждённые студенты вуза · контакт открывается при взаимном отклике
         </p>
+        {demo && (
+          <p className="mt-1.5 text-[12px] leading-snug text-faint">
+            Демо: в колоде синтетические студенты, их ответ на отклик смоделирован.
+            Ваши объявления видите только вы.
+          </p>
+        )}
       </header>
 
       <div className="mb-5 flex gap-2 px-1">
@@ -90,7 +99,11 @@ function Deck() {
     try {
       const res = await api.swipe(intent.id, decision);
       if (res.matched) {
-        toast.ok(`Взаимно! ${res.match_name ?? "Отклик"} — загляните в «Отклики»`);
+        toast.ok(
+          res.simulated
+            ? `Демо-отклик: ${res.match_name ?? "автор"} — в «Откликах»`
+            : `Взаимно! ${res.match_name ?? "Отклик"} — загляните в «Отклики»`,
+        );
       }
     } catch {
       /* свайп не критичен: повтор подтянется при следующей загрузке */
@@ -264,12 +277,19 @@ function Matches() {
               <p className="mb-0.5 flex items-center gap-2 text-[16px] font-semibold text-ink">
                 <span className="truncate">{m.partner_name}</span>
                 {m.origin === "BUDDY" && <Chip tone="accent">наставник</Chip>}
+                {m.simulated && <Chip tone="soft">демо</Chip>}
               </p>
               <p className="truncate text-[13px] text-muted">{m.about}</p>
               <p className="text-[12px] text-faint">{dateRu(m.created_at)}</p>
             </div>
           </div>
 
+          {m.simulated && (
+            <p className="mt-3 text-[12px] leading-snug text-faint">
+              Синтетический студент демо-стенда: в MAX такого аккаунта нет, отклик
+              смоделирован. У настоящих студентов здесь кнопка «Написать».
+            </p>
+          )}
           {m.partner_username && (
             <Button
               variant="soft"

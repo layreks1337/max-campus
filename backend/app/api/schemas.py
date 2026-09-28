@@ -300,6 +300,8 @@ class SwipeOut(BaseModel):
     matched: bool
     match_name: str | None = None
     match_username: str | None = None
+    # Демо-стенд: автор синтетический, его ответ смоделирован (решение 069)
+    simulated: bool = False
 
 
 class MatchOut(BaseModel):
@@ -310,6 +312,8 @@ class MatchOut(BaseModel):
     partner_photo: str = ""
     about: str
     created_at: datetime
+    # Партнёр — синтетический студент сида: в MAX его нет, контакт не показывается
+    simulated: bool = False
 
 
 class MatchProfileIn(BaseModel):
