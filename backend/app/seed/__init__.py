@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -41,6 +41,10 @@ log = logging.getLogger("seed")
 STAFF_CODES: dict[str, tuple[str, str, str, str]] = {
     code: (name, dept, role, position) for name, dept, role, position, code in demo.STAFF
 }
+
+# Срок жизни демо-объявлений «Людей». Считается от последнего продления,
+# а продлеваются они при каждом старте и раз в сутки планировщиком.
+DEMO_INTENT_TTL_DAYS = 30
 
 
 async def seed_templates(session: AsyncSession) -> int:
@@ -186,7 +190,7 @@ async def seed_demo_people(session: AsyncSession) -> int:
     """
     res = await session.execute(select(func.count(Intent.id)))
     if (res.scalar() or 0) > 0:
-        return 0
+        return await extend_demo_intents(session)
 
     res = await session.execute(select(Student).order_by(Student.id))
     students = list(res.scalars())
@@ -251,13 +255,49 @@ async def seed_demo_people(session: AsyncSession) -> int:
                 title=title,
                 description=description,
                 tags=tags,
-                expires_at=utcnow() + timedelta(days=30),
+                expires_at=utcnow() + timedelta(days=DEMO_INTENT_TTL_DAYS),
             )
         )
         created += 1
 
     await session.flush()
     return created
+
+
+async def extend_demo_intents(session: AsyncSession) -> int:
+    """Продлевает объявления демо-авторов (max_user_id < 0) ещё на 30 дней.
+
+    Раньше срок ставился один раз при первом сиде: объявления, созданные 23.09,
+    истекли бы 23.10, и к финалу колода «Людей» оказалась бы пустой. Уже снятые
+    по сроку (`expire_intents`) включаются обратно: снять демо-объявление иначе
+    некому — войти под отрицательным id нельзя. Объявления живых пользователей
+    и демо-копий экспертов (у них id MAX положительные) не трогаются.
+    """
+    demo_authors = select(AppUser.id).where(AppUser.max_user_id < 0)
+    res = await session.execute(
+        update(Intent)
+        .where(Intent.author_user_id.in_(demo_authors))
+        .values(expires_at=utcnow() + timedelta(days=DEMO_INTENT_TTL_DAYS), active=True)
+        .execution_options(synchronize_session=False)
+    )
+    await session.flush()
+    return res.rowcount or 0
+
+
+async def refresh_demo_dates(session: AsyncSession) -> dict[str, int]:
+    """Всё, что в демо-данных отсчитывается от «сегодня»: даты событий
+    и возможностей (решение 038) и срок демо-объявлений. Идемпотентно —
+    повторный вызов в тот же день ничего не меняет по смыслу."""
+    return {
+        "events": await _refresh_demo(
+            session, CalendarEvent, demo.events(), ("starts_at", "ends_at")
+        ),
+        "opportunities": await _refresh_demo(
+            session, Opportunity, demo.opportunities(), ("registration_deadline", "starts_at")
+        ),
+        "intents": await extend_demo_intents(session),
+    }
+
 
 async def seed_campus(session: AsyncSession) -> int:
     """Расписание, баллы, корпуса и староста — каждое, только если таблица пуста.

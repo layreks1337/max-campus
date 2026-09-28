@@ -220,6 +220,33 @@ async def buddy_and_cleanup() -> None:
             log.exception("Сбой в buddy/cleanup")
 
 
+# Иркутская дата последнего сдвига демо-дат; None — ещё не сдвигали в этом процессе
+_demo_shift_day = None
+
+
+async def shift_demo_dates() -> None:
+    """Раз в сутки заново отсчитывает даты демо-данных от сегодняшнего дня.
+
+    По решению 038 сид сдвигает даты событий и возможностей только при старте.
+    За недели проверки без перезапуска афиша уехала бы в прошлое. Ежедневный
+    рестарт по cron не годится: он обрывает запросы и фоновые задачи на лету.
+    Сдвиг идёт после иркутской полуночи — «завтра» в афише остаётся завтрашним
+    днём по времени вуза. Заодно продлеваются демо-объявления «Людей».
+    """
+    from app.core.dates import UNIVERSITY_TZ
+    from app.seed import refresh_demo_dates
+
+    global _demo_shift_day
+    today = utcnow().astimezone(UNIVERSITY_TZ).date()
+    if today == _demo_shift_day:
+        return
+    async with SessionLocal() as session:
+        stats = await refresh_demo_dates(session)
+        await session.commit()
+    _demo_shift_day = today
+    log.info("Даты демо-данных отсчитаны от %s: %s", today.isoformat(), stats)
+
+
 async def ensure_webhook() -> None:
     """Держит подписку бота на вебхук этого сервера.
 
@@ -269,6 +296,8 @@ def start_background_tasks() -> list[asyncio.Task]:
         ),
         asyncio.create_task(_loop("buddy", buddy_and_cleanup, 1800), name="buddy"),
         asyncio.create_task(_loop("class_reminders", class_reminders, 240), name="classes"),
+        # Проверка раз в 10 минут, сам сдвиг — раз в сутки
+        asyncio.create_task(_loop("demo_dates", shift_demo_dates, 600), name="demo-dates"),
     ]
     if (
         settings.bot_enabled

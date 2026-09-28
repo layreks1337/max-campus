@@ -35,6 +35,8 @@ media/
 uploads/
 generated_pdf/
 .minio/
+# Копии базы и справок (scripts/vps_maintenance.sh) — персональные данные
+backups/
 
 # IDE / OS
 .vscode/

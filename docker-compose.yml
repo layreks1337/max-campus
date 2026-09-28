@@ -1,3 +1,11 @@
+# Логи контейнеров — json-file с ротацией: по 10 МБ, три файла на сервис.
+# Без лимита за недели проверки логи приложения и Caddy съели бы диск VPS (10 ГБ).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -23,6 +31,7 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+    logging: *default-logging
 
   app:
     build:
@@ -44,6 +53,7 @@ services:
     volumes:
       - campus_data:/data
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)\""]
       interval: 15s
@@ -62,6 +72,7 @@ services:
       - app
     command: tunnel --no-autoupdate --url http://app:8000
     restart: unless-stopped
+    logging: *default-logging
 
   # То же, но с постоянным адресом: бесплатный статический домен ngrok.
   # В .env нужны NGROK_AUTHTOKEN и NGROK_DOMAIN (вида xxx.ngrok-free.app).
@@ -76,6 +87,7 @@ services:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     command: http app:8000 --url=https://${NGROK_DOMAIN}
     restart: unless-stopped
+    logging: *default-logging
 
   # Постоянный адрес через tuna.am — российский аналог ngrok. ngrok с российских
   # IP больше не пускает (ERR_NGROK_9040). Зарезервированный поддомен есть только
@@ -93,6 +105,7 @@ services:
     # Инспектор выключен: он сохраняет запросы целиком, включая данные авторизации MAX.
     command: http app:8000 --subdomain=${TUNA_SUBDOMAIN} --location=ru --https-redirect --inspect=false
     restart: unless-stopped
+    logging: *default-logging
 
   # Для VPS: HTTPS-вход с автоматическим сертификатом Let's Encrypt.
   # PUBLIC_HOST в .env — домен сервера, например 1-2-3-4.sslip.io (без покупки домена).
@@ -111,6 +124,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   campus_pgdata:
