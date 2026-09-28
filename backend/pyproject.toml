@@ -3,6 +3,9 @@ name = "max-campus-backend"
 version = "1.0.0"
 description = "MAX Campus — мини-приложение цифрового кампуса для мессенджера MAX"
 requires-python = ">=3.11"
+# Прямые зависимости и допустимые диапазоны. Точные версии вместе с транзитивными —
+# requirements.txt: из него ставит образ (backend/Dockerfile) и venv для разработки.
+# Новый пакет вписывается сюда и в requirements.txt (порядок — в шапке того файла).
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",

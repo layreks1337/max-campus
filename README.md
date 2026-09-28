@@ -130,8 +130,20 @@ curl -s -o spravka.pdf $BASE/api/documents/$DOC
 ```bash
 git clone <репозиторий> && cd max-campus
 cp .env.example .env          # заполнить MAX_BOT_TOKEN, YC_API_KEY, YC_FOLDER_ID
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # вывод — в .env: MAX_WEBHOOK_SECRET=<вывод>
 docker compose up -d --build  # http://localhost:8000
 ```
+
+Секрет вебхука нужен и без бота: им же подписаны коды билетов на события. С пустым
+`MAX_WEBHOOK_SECRET` вебхук принимает любой запрос, а смоук не засчитывает проверку
+«чужой секрет → 403». `MINIAPP_PUBLIC_URL` в примере — `http://localhost:8000`;
+на сервере это публичный HTTPS-адрес. Без ключей MAX и Yandex приложение тоже
+поднимается: не уходят сообщения в чат и выключен ассистент.
+
+Версии зависимостей зафиксированы: образ ставит Python-пакеты из
+`backend/requirements.txt`, фронтенд — `npm ci` по `frontend/package-lock.json`.
+Чистая сборка образа (`docker build --no-cache`, базовые образы уже скачаны) — 98 с
+при лимите кейса 5 минут; 90 из них pip скачивает пакеты (решение 075).
 
 Корневые сертификаты Минцифры (без них нет TLS до MAX API) уже лежат в `certs/`;
 обновить — `bash scripts/fetch_certs.sh`. База наполняется сама при первом старте:
@@ -466,9 +478,10 @@ SUBMITTED → IN_REVIEW → SIGNING → READY → ISSUED
 | Запуск | Docker Compose; на сервере — Caddy с сертификатом Let's Encrypt |
 
 **Зависимости.** Фронтенд — `frontend/package.json`, точные версии —
-`frontend/package-lock.json`. Бэкенд — `backend/pyproject.toml` (минимальные версии;
-тот же список ставит `backend/Dockerfile`). Точные версии в собранном образе —
-`docker compose exec app pip freeze`.
+`frontend/package-lock.json`, образ ставит их `npm ci`. Бэкенд — прямые зависимости
+и диапазоны в `backend/pyproject.toml`, точные версии вместе с транзитивными —
+`backend/requirements.txt` (`pip freeze` проверенного образа), образ ставит из него.
+Системных пакетов поверх `python:3.12-slim` нет (решение 075).
 
 ### Внешние сервисы
 
@@ -715,7 +728,8 @@ max-campus/
 ├─ certs/                      корневые сертификаты Минцифры
 ├─ backend/
 │  ├─ Dockerfile               сборка фронта и бэка в один образ
-│  ├─ pyproject.toml           зависимости бэкенда
+│  ├─ pyproject.toml           зависимости бэкенда: список и диапазоны
+│  ├─ requirements.txt         точные версии Python-пакетов, из него ставит образ
 │  ├─ assets/fonts/            шрифт PT Sans для PDF
 │  └─ app/
 │     ├─ core/                 конфигурация, подпись запуска, роли, лимиты, даты
@@ -758,11 +772,11 @@ max-campus/
 ```bash
 # Бэкенд отдельно (нужна поднятая база: docker compose up -d db)
 cd backend && python -m venv .venv
-./.venv/Scripts/python -m pip install -e .
-PYTHONPATH=. uvicorn app.main:app --reload
+./.venv/Scripts/python -m pip install -r requirements.txt   # те же версии, что в образе
+PYTHONPATH=. ./.venv/Scripts/python -m uvicorn app.main:app --reload
 
 # Фронтенд отдельно, с проксированием API на бэкенд
-cd frontend && npm install && npm run dev
+cd frontend && npm ci && npm run dev
 
 # Типы API для фронтенда из живой схемы
 cd frontend && npm run api:types

@@ -2,8 +2,10 @@
 FROM node:22-alpine AS frontend
 
 WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
+# Строго по закоммиченному package-lock.json: без него или при расхождении
+# с package.json npm ci падает, а не подбирает версии заново
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
@@ -22,16 +24,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-
-COPY backend/pyproject.toml ./backend/pyproject.toml
-RUN pip install --upgrade pip && pip install \
-      "fastapi>=0.115" "uvicorn[standard]>=0.32" "sqlalchemy[asyncio]>=2.0.36" \
-      "asyncpg>=0.30" "pgvector>=0.3.6" "pydantic>=2.9" "pydantic-settings>=2.6" \
-      "httpx>=0.27" "python-multipart>=0.0.12" "fpdf2>=2.8" "qrcode[pil]>=8.0" \
-      "openai>=1.54" "python-dateutil>=2.9"
+# Системных пакетов не ставим: curl в контейнере не нужен (healthcheck в
+# docker-compose.yml — на Python), ca-certificates уже есть в базовом образе.
+# Версии Python-пакетов зафиксированы в requirements.txt вместе с транзитивными:
+# чистая сборка даёт тот же набор, что проверен смоуком.
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --disable-pip-version-check --root-user-action=ignore \
+      -r backend/requirements.txt
 
 # Корневые сертификаты Минцифры — без них TLS до platform-api2.max.ru не поднимется
 COPY certs/ ./certs/
