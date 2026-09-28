@@ -135,6 +135,7 @@ function StaffDesk({ me }: { me: Me }) {
 
       <StaffSheet
         request={active}
+        canSignDocs={["STAFF_HEAD", "ADMIN"].includes(me.staff?.role ?? "")}
         onClose={() => setActive(null)}
         onUpdated={(updated) => {
           setActive(updated);
@@ -147,10 +148,14 @@ function StaffDesk({ me }: { me: Me }) {
 
 function StaffSheet({
   request,
+  canSignDocs,
   onClose,
   onUpdated,
 }: {
   request: CampusRequest | null;
+  /** Подписывать и выдавать может только подписант (STAFF_HEAD, ADMIN) —
+   *  специалисту сервер ответит 403, кнопку ему не показываем */
+  canSignDocs: boolean;
   onClose: () => void;
   onUpdated: (r: CampusRequest) => void;
 }) {
@@ -183,7 +188,7 @@ function StaffSheet({
 
   const canAccept = request.status === "SUBMITTED";
   const canSign = request.status === "IN_REVIEW";
-  const canIssue = ["SIGNING", "READY"].includes(request.status);
+  const canIssue = canSignDocs && ["SIGNING", "READY"].includes(request.status);
   const isOpen = !["ISSUED", "REJECTED", "CANCELLED"].includes(request.status);
 
   return (
@@ -279,6 +284,11 @@ function StaffSheet({
                 >
                   Передать на подпись
                 </Button>
+              )}
+              {!canSignDocs && ["SIGNING", "READY"].includes(request.status) && (
+                <p className="mb-1 text-center text-[13px] text-muted">
+                  Подписывает и выдаёт документ подписант деканата
+                </p>
               )}
               {canIssue && (
                 <Button
