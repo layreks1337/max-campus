@@ -357,17 +357,24 @@ async def seed_campus(session: AsyncSession) -> int:
 
 
 async def run_seed(session: AsyncSession) -> dict[str, int]:
-    """Полный проход. Возвращает счётчики созданного."""
-    stats = {
-        "templates": await seed_templates(session),
-        "students": await seed_students(session),
-        "codes": await seed_binding_codes(session),
-        "knowledge": await seed_knowledge(session),
-        "events": await seed_events(session),
-        "opportunities": await seed_opportunities(session),
-        "intents": await seed_demo_people(session),
-        "campus": await seed_campus(session),
-    }
+    """Полный проход. Возвращает счётчики созданного.
+
+    Шаблоны заявок — конфигурация, обновляются всегда. Остальное — демо-наполнение:
+    в пустую таблицу сид кладёт синтетику, а в базу вуза подложил бы учебные баллы
+    и расписание его настоящим студентам. Поэтому при SEED_DEMO_DATA=false создаются
+    только шаблоны — студентов, коды и регламенты вуз загружает сам (docs/05-rollout.md).
+    """
+    stats = {"templates": await seed_templates(session)}
+    if settings.SEED_DEMO_DATA:
+        stats |= {
+            "students": await seed_students(session),
+            "codes": await seed_binding_codes(session),
+            "knowledge": await seed_knowledge(session),
+            "events": await seed_events(session),
+            "opportunities": await seed_opportunities(session),
+            "intents": await seed_demo_people(session),
+            "campus": await seed_campus(session),
+        }
     await session.commit()
 
     if any(stats.values()):

@@ -59,6 +59,9 @@ class MeOut(BaseModel):
     student: StudentOut | None = None
     staff: StaffOut | None = None
     features: dict[str, bool] = Field(default_factory=dict)
+    # Смещение времени вуза от UTC (UNIVERSITY_TZ_HOURS): по нему фронтенд считает
+    # текущую пару, приветствие и даты на экранах, а не по часовому поясу телефона
+    tz_offset_hours: int = 8
 
 
 class BindRequest(BaseModel):

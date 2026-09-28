@@ -13,6 +13,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.models import (
     ST_IN_REVIEW,
     ST_ISSUED,
@@ -33,7 +34,12 @@ log = logging.getLogger("requests.service")
 # От чьего имени выдаётся типовая справка. Данные — из справочника студентов
 # (в демо он синтетический), подписи нет, поэтому «демо» и «автоматическая
 # выдача» стоят прямо в имени: так видно и в PDF, и в истории заявки.
-AUTO_ISSUER = "Демо-деканат (автоматическая выдача)"
+# У вуза со своим контингентом (SEED_DEMO_DATA=false) «демо» уже неправда.
+AUTO_ISSUER = (
+    "Демо-деканат (автоматическая выдача)"
+    if settings.SEED_DEMO_DATA
+    else "Деканат (автоматическая выдача)"
+)
 
 # Шаги автовыдачи — те же статусы, что проходит заявка у сотрудника.
 # Машину состояний не обходим: история честно показывает маршрут.

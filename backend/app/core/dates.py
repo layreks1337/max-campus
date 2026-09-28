@@ -10,13 +10,16 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-# Иркутск, UTC+8, без перехода на летнее время. Фиксированное смещение, а не
-# ZoneInfo: в slim-образе может не оказаться базы часовых поясов.
-UNIVERSITY_TZ = timezone(timedelta(hours=8))
+from app.core.config import settings
+
+# Смещение из UNIVERSITY_TZ_HOURS, по умолчанию Иркутск, UTC+8. Фиксированное
+# смещение, а не ZoneInfo: в slim-образе может не оказаться базы часовых поясов,
+# а в России переходов на летнее время нет.
+UNIVERSITY_TZ = timezone(timedelta(hours=settings.UNIVERSITY_TZ_HOURS))
 
 
 def local(dt: datetime) -> datetime:
-    """Время вуза. Всё, что видит человек, показывается по Иркутску."""
+    """Время вуза. Всё, что видит человек, показывается по времени вуза."""
     return dt.astimezone(UNIVERSITY_TZ) if dt.tzinfo else dt
 
 MONTHS_GEN = [

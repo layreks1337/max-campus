@@ -16,13 +16,13 @@ import { GlassIcon } from "@/components/ui/glass-icon";
 import { Card, Chip } from "@/components/ui/primitives";
 import { api, ApiException } from "@/shared/api";
 import type { Poll, Slot, Today, TodayItem } from "@/shared/types";
-import { cn, haptic, plural } from "@/shared/utils";
+import { cn, haptic, plural, universityNow } from "@/shared/utils";
 
 /* ── Сейчас и дальше ───────────────────────────────────────────── */
 
 function minutesNow(): number {
-  // Время вуза — Иркутск (UTC+8), независимо от часового пояса телефона
-  const d = new Date(Date.now() + 8 * 3600_000);
+  // Время вуза, независимо от часового пояса телефона
+  const d = universityNow();
   return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
 

@@ -22,7 +22,7 @@ import { Card, CardSkeleton, Chip, Empty, Section } from "@/components/ui/primit
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import type { Group, Home as HomeData, Me, Poll, Today } from "@/shared/types";
-import { plural } from "@/shared/utils";
+import { plural, universityNow } from "@/shared/utils";
 
 export default function Home({ me }: { me: Me }) {
   const [data, setData] = useState<HomeData | null>(null);
@@ -234,11 +234,11 @@ export default function Home({ me }: { me: Me }) {
   );
 }
 
-/** То же приветствие, что считает сервер (по Иркутску, UTC+8), — пока грузится
+/** То же приветствие, что считает сервер (по времени вуза), — пока грузится
  *  главная. Раньше здесь было «Привет, Анна», и через секунду заголовок
  *  менялся на «Доброе утро, Анна» с переносом на вторую строку. */
 function greetingNow(): string {
-  const hour = new Date(Date.now() + 8 * 3600_000).getUTCHours();
+  const hour = universityNow().getUTCHours();
   if (hour >= 5 && hour < 12) return "Доброе утро";
   if (hour >= 12 && hour < 18) return "Добрый день";
   if (hour >= 18 && hour < 23) return "Добрый вечер";

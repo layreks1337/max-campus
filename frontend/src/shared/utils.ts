@@ -14,52 +14,81 @@ const MONTHS_NOM = [
   "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
 
+/* Время вуза, а не часовой пояс телефона: расписание, события и сообщения бота
+ * живут по вузу, и эксперт из Москвы должен видеть то же «18:00», что и в чате.
+ * Смещение приходит с сервера в /me (UNIVERSITY_TZ_HOURS); до ответа — Иркутск,
+ * как по умолчанию на сервере. */
+let universityOffsetHours = 8;
+
+export function setUniversityOffset(hours: number | undefined): void {
+  if (typeof hours === "number" && Number.isFinite(hours)) universityOffsetHours = hours;
+}
+
+/** Тот же момент, сдвинутый во время вуза. Читать через getUTC*(). */
+function toUniversity(d: Date): Date {
+  return new Date(d.getTime() + universityOffsetHours * 3600_000);
+}
+
+/** Текущее время вуза. Читать через getUTC*(): часы и минуты — уже по вузу. */
+export function universityNow(): Date {
+  return toUniversity(new Date());
+}
+
 export function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** Дата-время из API во времени вуза, читать через getUTC*(). Дата без времени
+ *  («2026-09-28») — календарный день, её не сдвигаем. */
+export function universityDate(value: string | null | undefined): Date | null {
+  const d = parseDate(value);
+  if (!d) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value ?? "") ? d : toUniversity(d);
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
 /** 23 сентября */
 export function dateRu(value: string | null | undefined): string {
-  const d = parseDate(value);
+  const d = universityDate(value);
   if (!d) return "";
-  return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}`;
+  return `${d.getUTCDate()} ${MONTHS_GEN[d.getUTCMonth()]}`;
 }
 
 /** 23 сентября 2026 */
 export function dateFullRu(value: string | null | undefined): string {
-  const d = parseDate(value);
+  const d = universityDate(value);
   if (!d) return "";
-  return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`;
+  return `${d.getUTCDate()} ${MONTHS_GEN[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
 /** 23 сентября, 17:00 */
 export function dateTimeRu(value: string | null | undefined): string {
-  const d = parseDate(value);
+  const d = universityDate(value);
   if (!d) return "";
-  const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-  return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}, ${time}`;
+  return `${d.getUTCDate()} ${MONTHS_GEN[d.getUTCMonth()]}, ${timeRu(value)}`;
 }
 
+/** 17:00 — по времени вуза */
 export function timeRu(value: string | null | undefined): string {
-  const d = parseDate(value);
+  const d = universityDate(value);
   if (!d) return "";
-  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
 }
 
 export function monthName(value: string | null | undefined): string {
-  const d = parseDate(value);
-  return d ? MONTHS_NOM[d.getMonth()] : "";
+  const d = universityDate(value);
+  return d ? MONTHS_NOM[d.getUTCMonth()] : "";
 }
 
-/** «сегодня», «завтра», «через 3 дня», «23 сентября» */
+/** «сегодня», «завтра», «через 3 дня», «23 сентября» — дни считаются по вузу */
 export function relativeDay(value: string | null | undefined): string {
-  const d = parseDate(value);
+  const d = universityDate(value);
   if (!d) return "";
-  const today = new Date();
-  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((startOf(d) - startOf(today)) / 86_400_000);
+  const dayNo = (x: Date) => Math.floor(x.getTime() / 86_400_000);
+  const diff = dayNo(d) - dayNo(universityNow());
 
   if (diff === 0) return "сегодня";
   if (diff === 1) return "завтра";

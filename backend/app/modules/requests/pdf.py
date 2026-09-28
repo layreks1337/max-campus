@@ -27,8 +27,9 @@ from app.db.models import Document, Request, Student, utcnow
 log = logging.getLogger("requests.pdf")
 
 FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
+# Форма учреждения — общая для государственных вузов. Название вуза — из настроек
+# (UNIVERSITY_NAME): новый вуз подключается без правки кода.
 UNIVERSITY = "Федеральное государственное бюджетное образовательное учреждение"
-UNIVERSITY_SHORT = "Иркутский государственный университет"
 
 MONTHS_GEN = [
     "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -51,7 +52,8 @@ class CampusPDF(FPDF):
         bold = FONT_DIR / "PTSans-Bold.ttf"
         if not regular.exists():
             raise FileNotFoundError(
-                f"Не найден шрифт {regular}. Запустите scripts/fetch_assets.sh"
+                f"Не найден шрифт {regular}. Шрифты лежат в репозитории "
+                "(backend/assets/fonts) — проверьте, что папка попала в образ"
             )
         self.add_font("PT", "", str(regular))
         self.add_font("PT", "B", str(bold) if bold.exists() else str(regular))
@@ -72,7 +74,7 @@ class CampusPDF(FPDF):
         self._text_block(4.5, UNIVERSITY, "C")
         self.set_font("PT", "B", 11)
         self.set_text_color(20, 20, 20)
-        self._text_block(6, f"высшего образования\n«{UNIVERSITY_SHORT}»", "C")
+        self._text_block(6, f"высшего образования\n«{settings.UNIVERSITY_NAME}»", "C")
         self.ln(2)
         self.set_draw_color(200, 200, 200)
         self.line(20, self.get_y(), 190, self.get_y())

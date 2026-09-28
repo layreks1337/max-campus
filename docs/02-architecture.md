@@ -1,6 +1,23 @@
 # Архитектура бэкенда
 
-Стек: **Python + FastAPI (async) · PostgreSQL 16 + pgvector · SQLAlchemy 2.0 + Alembic · ARQ + Redis · S3/MinIO · WeasyPrint**
+> **Это проект, написанный до кода.** Идеи и контракты в силе, но часть решений
+> при реализации упростили — меньше сервисов, меньше мест, где что-то не поднимется.
+> Как устроено на самом деле — README («Архитектура», «Структура репозитория»)
+> и журнал решений. Главные расхождения:
+>
+> | В проекте ниже | В коде |
+> |---|---|
+> | Alembic | Миграций нет: `create_all` при старте и идемпотентные `ALTER` (`main.py`) |
+> | ARQ + Redis | Фоновые задачи — asyncio-циклы в процессе приложения (`workers/scheduler.py`), очередь сообщений — таблица `outbox` в Postgres |
+> | Кеш initData в Redis | Словарь в памяти процесса на 5 минут (`core/deps.py`) |
+> | TTL initData 15 минут | Час (решение 052) |
+> | S3/MinIO | Том `/data` контейнера |
+> | WeasyPrint | fpdf2 + шрифт PT Sans: чистый Python, без системных библиотек (шапка `modules/requests/pdf.py`) |
+> | Модули `routes/service/repo` | Роуты в `api/`, логика в `modules/*/` |
+> | Запасные эмбеддинги e5 по `EMBEDDING_PROVIDER` | Не реализованы: только Yandex, вектор 256 (решения 018, 021) |
+> | Время по Иркутску в коде | `UNIVERSITY_TZ_HOURS` и `UNIVERSITY_NAME` в настройках (решение 066) |
+
+Стек (реализация): **Python + FastAPI (async) · PostgreSQL 16 + pgvector · SQLAlchemy 2 · fpdf2 · Yandex AI Studio**
 
 ---
 
@@ -56,7 +73,7 @@ Authorization: MaxInitData <raw initData string>
 Один middleware (не размазывать по хендлерам):
 1. Парсит `WebAppData` (см. `03-max-platform.md`)
 2. Считает HMAC, сравнивает constant-time
-3. Проверяет `auth_date`, TTL 15 минут
+3. Проверяет `auth_date`, TTL час (`INIT_DATA_TTL_SECONDS`, решение 052)
 4. Кладёт в контекст: `max_user_id`, `chat_id`, `chat_type`, `student_id`, `role`
 
 Кешировать результат валидации в Redis на 5 минут по хешу строки — иначе HMAC считается
@@ -360,12 +377,13 @@ resp = await client.chat.completions.create(
 - `text-search-doc/latest` — для чанков при индексации
 - `text-search-query/latest` — для пользовательского запроса при поиске
 
-⚠️ **Размерность подтвердить одним тестовым вызовом до написания миграции.**
-От неё зависит тип столбца `vector(N)` в `kb_chunk`; менять после наполнения базы больно.
+✅ **Размерность подтверждена тестовым вызовом — 256**, столбец `vector(256)` в
+`kb_chunk` (решение 021). Менять её после наполнения базы больно.
 
 *Причина выбора против локальных эмбеддингов:* снимает 1–2 ГБ RAM с деплоя и убирает
-риск «модель не влезла на VPS». Запасной вариант (`multilingual-e5-base`, 768) остаётся
-за тем же интерфейсом — переключается переменной `EMBEDDING_PROVIDER`.
+риск «модель не влезла на VPS». Запасной вариант (`multilingual-e5-base`, 768)
+**не реализован**: переменная `EMBEDDING_PROVIDER` в `.env.example` зарезервирована
+и кодом не читается.
 
 ---
 

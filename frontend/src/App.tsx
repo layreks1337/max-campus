@@ -22,6 +22,7 @@ import {
   setBackButton,
 } from "@/shared/max";
 import type { Me } from "@/shared/types";
+import { setUniversityOffset } from "@/shared/utils";
 
 import Campus from "@/screens/Campus";
 import Chat from "@/screens/Chat";
@@ -79,7 +80,10 @@ export default function App() {
 
   const loadMe = useCallback(async () => {
     try {
-      setMe(await api.me());
+      const profile = await api.me();
+      // До первого экрана: пара, приветствие и даты считаются по времени вуза
+      setUniversityOffset(profile.tz_offset_hours);
+      setMe(profile);
       setFatal(null);
     } catch (e) {
       setFatal(

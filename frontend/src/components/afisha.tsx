@@ -46,7 +46,16 @@ import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import { openExternal, setBackButton } from "@/shared/max";
 import type { CampusEvent, Details, Opportunity, Ticket } from "@/shared/types";
-import { cn, dateRu, haptic, parseDate, plural, relativeDay, timeRu } from "@/shared/utils";
+import {
+  cn,
+  dateRu,
+  haptic,
+  parseDate,
+  plural,
+  relativeDay,
+  timeRu,
+  universityDate,
+} from "@/shared/utils";
 
 /* ── Данные ────────────────────────────────────────────────────── */
 
@@ -129,7 +138,8 @@ function gradientOf(item: Item): string | undefined {
 function Art({ item, big }: { item: Item; big?: boolean }) {
   const cover = coverOf(item);
   if (cover) return <Cover src={cover} title={titleOf(item)} />;
-  const d = parseDate(item.date);
+  // День и месяц — по вузу, как время рядом (timeRu), а не по телефону
+  const d = universityDate(item.date);
   const deadline = isDeadline(item);
   return (
     <>
@@ -142,7 +152,7 @@ function Art({ item, big }: { item: Item; big?: boolean }) {
           big ? "top-[14%] right-5 text-[260px]" : "top-[16%] right-[52px] text-[170px]",
         )}
       >
-        {d?.getDate()}
+        {d?.getUTCDate()}
       </span>
       <span
         aria-hidden
@@ -152,7 +162,7 @@ function Art({ item, big }: { item: Item; big?: boolean }) {
           big ? "top-24 left-5 text-[17px]" : "top-16 left-[60px] text-[14px]",
         )}
       >
-        {d ? `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} · ${timeRu(item.date)}` : ""}
+        {d ? `${d.getUTCDate()} ${MONTHS_SHORT[d.getUTCMonth()]} · ${timeRu(item.date)}` : ""}
       </span>
     </>
   );
@@ -263,8 +273,8 @@ export function Afisha() {
 
 /** Крупная дата активной обложки: цифры меняются вертикальной прокруткой. */
 function BigDate({ item }: { item: Item | undefined }) {
-  const d = parseDate(item?.date);
-  const label = d ? `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}` : "";
+  const d = universityDate(item?.date);
+  const label = d ? `${d.getUTCDate()} ${MONTHS_SHORT[d.getUTCMonth()]}` : "";
   const caption = item
     ? item.kind === "event"
       ? relativeDay(item.date)

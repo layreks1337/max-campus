@@ -36,6 +36,8 @@ export interface Me {
   student: Student | null;
   staff: Staff | null;
   features: { assistant?: boolean; bot?: boolean; demo?: boolean };
+  /** Смещение времени вуза от UTC, часы (UNIVERSITY_TZ_HOURS на сервере) */
+  tz_offset_hours?: number;
 }
 
 export type FieldType =

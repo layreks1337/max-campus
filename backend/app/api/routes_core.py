@@ -77,6 +77,7 @@ async def get_me(current: CurrentUserDep) -> MeOut:
             "bot": settings.bot_enabled,
             "demo": settings.DEMO_MODE,
         },
+        tz_offset_hours=settings.UNIVERSITY_TZ_HOURS,
     )
 
 

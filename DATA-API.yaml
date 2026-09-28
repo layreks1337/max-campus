@@ -12,12 +12,12 @@ api:
     ответы по регламентам (ассистент на базе RAG), свои люди. Плюс подача
     заявлений, календарь вуза, конкурсы и хакатоны.
 
-  # Адрес меняется при перезапуске туннеля — актуальный всегда в README.md
-  base_url: https://REPLACE-WITH-CURRENT-TUNNEL/api
+  # Постоянный адрес стенда на VPS (решение 048); он же — в README.md
+  base_url: https://195-19-202-143.sslip.io/api
   openapi:
     version: "3.1"
-    url: https://REPLACE-WITH-CURRENT-TUNNEL/api/openapi.json
-    interactive_docs: https://REPLACE-WITH-CURRENT-TUNNEL/api/docs
+    url: https://195-19-202-143.sslip.io/api/openapi.json
+    interactive_docs: https://195-19-202-143.sslip.io/api/docs
 
   protocol: HTTPS
   format: application/json; charset=utf-8
@@ -28,7 +28,7 @@ authentication:
   description: >-
     Каждый запрос несёт подписанную строку запуска мини-приложения.
     Подпись проверяется на сервере по HMAC-SHA256 с ключом, производным
-    от токена бота; срок жизни строки — 15 минут.
+    от токена бота; срок жизни строки — час.
   header: "Authorization: MaxInitData <initData>"
   validation:
     algorithm: HMAC-SHA256
@@ -78,6 +78,15 @@ endpoints:
         - POST /api/binding/demo-staff
         - GET  /api/home
         - POST /api/uploads
+    - name: Учёба и группа
+      paths:
+        - GET  /api/today
+        - GET  /api/schedule
+        - GET  /api/grades
+        - GET  /api/buildings
+        - GET  /api/group
+        - POST /api/group/polls
+        - POST /api/group/polls/{poll_id}/vote
     - name: Заявки и справки
       paths:
         - GET  /api/requests/templates
@@ -92,12 +101,16 @@ endpoints:
         - GET  /api/staff/requests
         - POST /api/staff/requests/{public_no}/transition
         - POST /api/staff/requests/{public_no}/issue
+        - POST /api/staff/tickets/check
     - name: Календарь вуза
       paths:
         - GET    /api/events
         - POST   /api/events
         - POST   /api/events/{event_id}/register
         - DELETE /api/events/{event_id}/register
+        - GET    /api/events/{event_id}/ticket
+        - POST   /api/events/{event_id}/share
+        - GET    /ics/event/{event_id}.ics
     - name: Возможности
       paths:
         - GET  /api/opportunities
@@ -122,6 +135,7 @@ endpoints:
         - GET    /api/assistant/history
         - DELETE /api/assistant/history
         - GET    /api/assistant/status
+        - POST   /api/assistant/transcribe
     - name: Публичные
       paths:
         - GET  /api/health
@@ -153,7 +167,7 @@ errors:
       meaning: Регистрация на событие закрыта.
     - code: RATE_LIMITED
       http: 429
-      meaning: Превышен лимит попыток (например, подбор кода привязки).
+      meaning: Превышен лимит (подбор кода привязки, вопросы ассистенту).
     - code: DEMO_DISABLED
       http: 404
       meaning: Демо-вход выключен на сервере (DEMO_MODE=false).
@@ -165,6 +179,9 @@ rate_limits:
   - scope: Демо-вход (копии студента)
     limit: 60 новых копий в час на сервер, одна копия на аккаунт
     reason: Скрипт с тестовыми id иначе набил бы базу копиями.
+  - scope: Вопросы ассистенту
+    limit: 20 вопросов за 10 минут на пользователя, ответ — не дольше 25 секунд
+    reason: Каждый вопрос — платный вызов YandexGPT, адрес публичный.
   - scope: Исходящие сообщения в MAX
     limit: 20 запросов в секунду
     reason: Платформа допускает 30; держим запас.
@@ -240,5 +257,7 @@ deployment:
   services:
     - db (pgvector/pgvector:pg16)
     - app (FastAPI + собранный фронтенд в одном образе)
-    - tunnel (cloudflared, профиль tunnel — публичный HTTPS без своего домена)
-  reproducible_start: docker compose --profile tunnel up -d --build
+    - caddy (профиль vps — HTTPS с сертификатом Let's Encrypt, так работает стенд)
+    - tunnel (cloudflared, профиль tunnel — публичный HTTPS без своего сервера)
+  # Локально без HTTPS — docker compose up -d --build
+  reproducible_start: docker compose --profile vps up -d --build

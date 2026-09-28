@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py -> backend/app/core -> backend/app -> backend -> корень репозитория
@@ -35,6 +36,14 @@ class Settings(BaseSettings):
 
     # Публичный HTTPS-адрес мини-приложения. Используется в кнопке open_app и в диплинках.
     MINIAPP_PUBLIC_URL: str = "http://localhost:8000"
+
+    # ── Вуз ───────────────────────────────────────────────────────
+    # Подключение нового вуза начинается с этих строк (docs/05-rollout.md).
+    # Название — в шапке PDF-справок: «…высшего образования «<название>»».
+    UNIVERSITY_NAME: str = "Иркутский государственный университет"
+    # Смещение времени вуза от UTC, часы: расписание, приветствие, тихие часы,
+    # даты в уведомлениях и на экранах. Иркутск — UTC+8 круглый год.
+    UNIVERSITY_TZ_HOURS: int = Field(default=8, ge=-12, le=14)
 
     # ── MAX ───────────────────────────────────────────────────────
     MAX_BOT_TOKEN: str = ""
@@ -81,6 +90,10 @@ class Settings(BaseSettings):
     # Предохранитель на весь сервер: сколько копий можно создать за час.
     # Скрипт с тестовыми id иначе набил бы базу тысячами копий.
     DEMO_COPIES_PER_HOUR: int = 60
+    # Демо-наполнение пустой базы: синтетические студенты и коды, 15 типовых
+    # регламентов, события, расписание, баллы, объявления «Людей». Для вуза с
+    # настоящими данными — false: сид создаёт только шаблоны заявок (решение 066).
+    SEED_DEMO_DATA: bool = True
 
     # ── База данных ───────────────────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://campus:campus@localhost:5432/campus"

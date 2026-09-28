@@ -96,6 +96,15 @@ if isinstance(health, dict):
 section("2. Онбординг и привязка студенческого")
 status, me = call("GET", "/api/me", STUDENT)
 check("профиль доступен", status == 200, str(me))
+# Время вуза задаётся UNIVERSITY_TZ_HOURS; фронтенд берёт смещение отсюда
+UNI_TZ_HOURS = me.get("tz_offset_hours") if isinstance(me, dict) else None
+check(
+    "профиль отдаёт смещение времени вуза",
+    isinstance(UNI_TZ_HOURS, int),
+    f"tz_offset_hours = {UNI_TZ_HOURS!r}",
+)
+if not isinstance(UNI_TZ_HOURS, int):
+    UNI_TZ_HOURS = 8
 
 if isinstance(me, dict) and not me.get("is_bound"):
     status, res = call("POST", "/api/requests", STUDENT, {"template_key": "study_certificate", "payload": {}})
@@ -263,9 +272,9 @@ if isinstance(mine, dict):
 section("8. Очередь уведомлений")
 
 
-def irkutsk_greeting() -> str:
-    """Приветствие по часу Иркутска (UTC+8) — так же считает сервер."""
-    hour = time.gmtime(time.time() + 8 * 3600).tm_hour
+def university_greeting() -> str:
+    """Приветствие по часу вуза (по умолчанию Иркутск, UTC+8) — так же считает сервер."""
+    hour = time.gmtime(time.time() + UNI_TZ_HOURS * 3600).tm_hour
     if 5 <= hour < 12:
         return "Доброе утро"
     if 12 <= hour < 18:
@@ -275,9 +284,9 @@ def irkutsk_greeting() -> str:
     return "Доброй ночи"
 
 
-greet_before = irkutsk_greeting()
+greet_before = university_greeting()
 status, home = call("GET", "/api/home", STUDENT)
-greet_after = irkutsk_greeting()
+greet_after = university_greeting()
 check("главный экран собирается", status == 200, str(home)[:200])
 if isinstance(home, dict):
     print(f"       {home['greeting']}")
