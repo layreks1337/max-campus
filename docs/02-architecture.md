@@ -189,7 +189,7 @@ audit_log(id, actor_id, action, entity_type, entity_id, diff_json, created_at)
 ```
 
 Первая миграция должна содержать `CREATE EXTENSION vector;`
-Образ БД — `pgvector/pgvector:pg16`.
+Образ БД — `pgvector/pgvector:0.8.6-pg16`.
 
 ---
 

@@ -4,6 +4,8 @@
 .git
 .env
 **/.env
+**/.env.*
+!.env.example
 tmp
 frontend/node_modules
 frontend/dist

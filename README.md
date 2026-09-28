@@ -140,7 +140,7 @@ curl -s -o spravka.pdf $BASE/api/documents/$DOC
 | Что | Нужно |
 |---|---|
 | Docker | Docker Engine с Compose 2.24+ (на Windows и macOS — Docker Desktop). Проверено: Docker 29.7 и Compose 5.4 на машине разработки, Docker 29.8 и Compose 5.5 на стенде |
-| Память и диск | В работе оба контейнера занимают около 200 МБ памяти (`docker stats`), стенд живёт на VPS с 1 ГБ. Диск — около 1 ГБ под базовые образы (`pgvector/pgvector:pg16`, `node:22-alpine`, `python:3.12-slim`) и 0,4 ГБ под образ приложения |
+| Память и диск | В работе оба контейнера занимают около 200 МБ памяти (`docker stats`), стенд живёт на VPS с 1 ГБ. Диск — около 1 ГБ под базовые образы (`pgvector/pgvector:0.8.6-pg16`, `node:22.23.3-alpine`, `python:3.12.14-slim`) и 0,4 ГБ под образ приложения |
 | Порты хоста | Свободные 8000 и 5433 на `127.0.0.1`; 80 и 443 — только для профиля `vps` |
 | Сеть при сборке | Docker Hub, registry.npmjs.org, PyPI (`pypi.org`, `files.pythonhosted.org`) |
 | Сеть при работе | Бот — HTTPS до `platform-api2.max.ru`; ассистент и голос — `ai.`, `llm.` и `stt.api.cloud.yandex.net`; страница грузит скрипт Bridge с `st.max.ru` |
@@ -174,7 +174,8 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"   # вывод — 
 `http://localhost:8000`; на сервере это публичный HTTPS-адрес.
 
 Версии зависимостей зафиксированы: образ ставит Python-пакеты из
-`backend/requirements.txt`, фронтенд — `npm ci` по `frontend/package-lock.json`.
+`backend/requirements.txt`, фронтенд — `npm ci` по `frontend/package-lock.json`,
+базовые образы и образы сервисов compose — с точной версией.
 Чистая сборка образа (`docker build --no-cache`, базовые образы уже скачаны) — 98 с
 при лимите кейса 5 минут; 90 из них pip скачивает пакеты (решение 075).
 
@@ -502,11 +503,11 @@ SUBMITTED → IN_REVIEW → SIGNING → READY → ISSUED
 
 | Сервис `docker-compose.yml` | Образ | Что делает | Когда поднимается |
 |---|---|---|---|
-| `db` | `pgvector/pgvector:pg16` | PostgreSQL с pgvector: данные сервиса, очередь сообщений `outbox`, векторы базы знаний | всегда |
+| `db` | `pgvector/pgvector:0.8.6-pg16` | PostgreSQL с pgvector: данные сервиса, очередь сообщений `outbox`, векторы базы знаний | всегда |
 | `app` | собирается из `backend/Dockerfile` | Один процесс uvicorn: API, собранный фронтенд, вебхук бота. При старте — схема базы, сид и индексация базы знаний; дальше фоновые циклы: очередь сообщений, напоминания о событиях, дедлайнах и парах, подбор наставников, сдвиг демо-дат, сторож вебхука (если включён) | всегда |
-| `caddy` | `caddy:2-alpine` | HTTPS с сертификатом Let's Encrypt перед `app` | профиль `vps` — на сервере |
-| `tunnel` | `cloudflare/cloudflared` | Временный публичный адрес без сервера | профиль `tunnel` — проверка у себя |
-| `ngrok`, `tuna` | `ngrok/ngrok`, `yuccastream/tuna` | Запасные туннели с постоянным адресом; на стенде не используются | профили `ngrok`, `tuna` |
+| `caddy` | `caddy:2.11.4-alpine` | HTTPS с сертификатом Let's Encrypt перед `app` | профиль `vps` — на сервере |
+| `tunnel` | `cloudflare/cloudflared:2026.9.1` | Временный публичный адрес без сервера | профиль `tunnel` — проверка у себя |
+| `ngrok`, `tuna` | `ngrok/ngrok:3.39.8-debian`, `yuccastream/tuna:0.35.1` | Запасные туннели с постоянным адресом; на стенде не используются | профили `ngrok`, `tuna` |
 
 ### Стек
 
@@ -514,7 +515,7 @@ SUBMITTED → IN_REVIEW → SIGNING → READY → ISSUED
 |---|---|
 | Фронтенд | React 18, TypeScript, Vite 6, Tailwind CSS 4, Framer Motion |
 | Бэкенд | Python 3.12, FastAPI, SQLAlchemy 2 (async), asyncpg, httpx |
-| Данные | PostgreSQL 16 + pgvector (образ `pgvector/pgvector:pg16`) |
+| Данные | PostgreSQL 16 + pgvector 0.8.6 (образ `pgvector/pgvector:0.8.6-pg16`) |
 | Документы | fpdf2, шрифт PT Sans (OFL, лежит в `backend/assets/fonts`), qrcode |
 | LLM | YandexGPT (`yandexgpt/latest`) через OpenAI-совместимый эндпоинт Yandex AI Studio |
 | Эмбеддинги | Yandex `text-search-doc` (документы) и `text-search-query` (вопросы), вектор 256, столбец `vector(256)` |
@@ -525,7 +526,8 @@ SUBMITTED → IN_REVIEW → SIGNING → READY → ISSUED
 `frontend/package-lock.json`, образ ставит их `npm ci`. Бэкенд — прямые зависимости
 и диапазоны в `backend/pyproject.toml`, точные версии вместе с транзитивными —
 `backend/requirements.txt` (`pip freeze` проверенного образа), образ ставит из него.
-Системных пакетов поверх `python:3.12-slim` нет (решение 075).
+Системных пакетов поверх `python:3.12.14-slim` нет (решение 075). Образы в
+`backend/Dockerfile` и `docker-compose.yml` — с точной версией, без `latest` (решение 082).
 
 ### Внешние сервисы
 

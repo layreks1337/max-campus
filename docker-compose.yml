@@ -1,3 +1,6 @@
+# Образы — с точной версией, а не pg16/latest (решение 082): теги сверены по дайджесту
+# с проверенными образами. Обновлять осознанно, вместе с scripts/deploy_vps.sh и README.
+#
 # Логи контейнеров — json-file с ротацией: по 10 МБ, три файла на сервис.
 # Без лимита за недели проверки логи приложения и Caddy съели бы диск VPS (10 ГБ).
 x-logging: &default-logging
@@ -8,7 +11,7 @@ x-logging: &default-logging
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.6-pg16
     container_name: campus-db
     environment:
       POSTGRES_USER: campus
@@ -69,7 +72,7 @@ services:
   # Запуск:  docker compose --profile tunnel up -d
   # Адрес появится в логах:  docker compose logs -f tunnel
   tunnel:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.9.1
     container_name: campus-tunnel
     profiles: ["tunnel"]
     depends_on:
@@ -84,7 +87,7 @@ services:
   # В .env нужны NGROK_AUTHTOKEN и NGROK_DOMAIN (вида xxx.ngrok-free.app).
   # Запуск:  docker compose --profile ngrok up -d
   ngrok:
-    image: ngrok/ngrok:latest
+    image: ngrok/ngrok:3.39.8-debian
     container_name: campus-ngrok
     profiles: ["ngrok"]
     depends_on:
@@ -117,7 +120,7 @@ services:
   # PUBLIC_HOST в .env — домен сервера, например 1-2-3-4.sslip.io (без покупки домена).
   # Запуск:  docker compose --profile vps up -d
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.4-alpine
     container_name: campus-caddy
     profiles: ["vps"]
     depends_on:

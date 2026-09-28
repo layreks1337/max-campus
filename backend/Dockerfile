@@ -1,5 +1,8 @@
+# Базовые образы — с точной версией (решение 082): node:22-alpine и python:3.12-slim
+# со временем указывали бы на другие сборки, и образ собирался бы не из проверенного.
+
 # ── Сборка фронтенда ──────────────────────────────────────────────
-FROM node:22-alpine AS frontend
+FROM node:22.23.3-alpine AS frontend
 
 WORKDIR /build
 # Строго по закоммиченному package-lock.json: без него или при расхождении
@@ -11,7 +14,7 @@ RUN npm run build
 
 
 # ── Бэкенд ────────────────────────────────────────────────────────
-FROM python:3.12-slim
+FROM python:3.12.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

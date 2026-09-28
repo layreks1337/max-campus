@@ -58,12 +58,20 @@ EXPORT_DIR="$(mktemp -d)"
 trap 'rm -rf "$EXPORT_DIR"' EXIT
 git archive "$REF" | tar -x -C "$EXPORT_DIR"
 docker build -q -f "$EXPORT_DIR/backend/Dockerfile" -t max-campus-app:deploy "$EXPORT_DIR"
-docker pull -q caddy:2-alpine >/dev/null
-docker pull -q pgvector/pgvector:pg16 >/dev/null
+# Образы базы и Caddy — ровно те теги, что в docker-compose.yml выкладываемой версии:
+# сервер их не качает, а поднимает перенесённые (решение 082)
+image_of() {
+  awk -v svc="  $1:" '{ sub(/\r$/, "") } $0 == svc { f = 1; next }
+    f && /^  [^ #]/ { exit } f && $1 == "image:" { print $2; exit }' "$EXPORT_DIR/docker-compose.yml"
+}
+DB_IMAGE="$(image_of db)"; CADDY_IMAGE="$(image_of caddy)"
+[[ -n "$DB_IMAGE" && -n "$CADDY_IMAGE" ]] || { echo "Не нашёл образы db и caddy в docker-compose.yml"; exit 1; }
+docker pull -q "$CADDY_IMAGE" >/dev/null
+docker pull -q "$DB_IMAGE" >/dev/null
 
 echo "==> Переношу образы (прошлый остаётся как :prev)"
 "${SSH[@]}" "docker tag max-campus-app:latest max-campus-app:prev 2>/dev/null || true"
-docker save max-campus-app:deploy pgvector/pgvector:pg16 caddy:2-alpine | gzip -1 \
+docker save max-campus-app:deploy "$DB_IMAGE" "$CADDY_IMAGE" | gzip -1 \
   | "${SSH[@]}" "gunzip | docker load && docker tag max-campus-app:deploy max-campus-app:latest"
 
 echo "==> Переношу файлы проекта"
