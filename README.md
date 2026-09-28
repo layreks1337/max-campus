@@ -204,7 +204,7 @@ Cloudflare, и у части пользователей вместо прило�
 curl http://localhost:8000/api/health
 python scripts/smoke_test.py      # сквозной сценарий, безопасность, демо-вход, билеты: на 28.09 — 96 проверок, все зелёные
 DATA_API_TOKEN_STUDENT="MaxInitData dev:990301:Expert" \
-  python scripts/check_data_api.py --base-url http://localhost:8000   # DATA-API.yaml: 14 обязательных проверок
+  python scripts/check_data_api.py --base-url http://localhost:8000   # DATA-API.yaml: 15 обязательных проверок; без ключей Yandex — 14 из 15, ассистент выключен
 bash scripts/reset_demo.sh        # после них: смоук занимает код привязки A7K2-9M, оба выдают справки
 python scripts/test_assistant.py  # качество ответов ассистента, 10 сценариев (платные вызовы YandexGPT)
 docker compose exec -T app python - < scripts/test_bot_buttons.py   # кнопки бота и приём вебхука, без сети
@@ -610,7 +610,7 @@ SUBMITTED → IN_REVIEW → SIGNING → READY → ISSUED
 |---|---|
 | Адрес API | `https://195-19-202-143.sslip.io` — пути от корня хоста: `/api/…`, `/verify/…` |
 | OpenAPI 3.1 | [`openapi.json`](openapi.json) в корне — то же, что сервер отдаёт на `/api/openapi.json`; интерактивно — [/api/docs](https://195-19-202-143.sslip.io/api/docs). Вход — схема безопасности `MaxAuth` (заголовок `Authorization`), у каждого метода — его отказы в едином конверте `ErrorResponse`, у PDF — `application/pdf` |
-| Обязательные проверки | [`DATA-API.yaml`](DATA-API.yaml) — формат DATA-API 1.0 организаторов: 14 проверок основного сценария и шаг очистки |
+| Обязательные проверки | [`DATA-API.yaml`](DATA-API.yaml) — формат DATA-API 1.0 организаторов: 15 проверок основного сценария и два шага очистки |
 | Тестовые учётные записи | Логинов и паролей нет: тестовый вход `Authorization: MaxInitData dev:<id>:<Имя>`, id 900000–999999 — [`testdata/roles.json`](testdata/roles.json) |
 | Тестовые данные | [`testdata/`](testdata) — см. [«Тестовые данные»](#тестовые-данные) |
 | Вход, роли, методы, ошибки, лимиты | [`docs/06-api.md`](docs/06-api.md) |
@@ -618,10 +618,15 @@ SUBMITTED → IN_REVIEW → SIGNING → READY → ISSUED
 **Сценарий `DATA-API.yaml`:** сервис жив → без авторизации — 401 в едином формате
 ошибок → демо-профиль студента → профиль → каталог справок → форма справки об
 обучении → заявка (201, справка выдаётся сразу) → заявка с историей и документом →
-PDF → проверка подлинности без входа → мои заявки → ответ ассистента с источниками →
-роль деканата в один тап → очередь деканата; в конце — очистка (отмена заявки: у
-выданной справки — 409, это ожидаемо). Роль `student` — тестовый вход; значение
-передаётся проверке отдельно, секретов в файле нет.
+PDF → проверка подлинности без входа (`found` и `valid` — `true`) → мои заявки →
+ответ ассистента хотя бы с одним источником → нетиповая заявка с оригиналом
+(`SUBMITTED`, ждёт сотрудника) → роль деканата в один тап → очередь деканата, в ней
+эта заявка; в конце — очистка: отмена обеих заявок (у выданной справки — 409, это
+ожидаемо). Роль `student` — тестовый вход; значение передаётся проверке отдельно,
+секретов в файле нет. Для всех прогонов — один и тот же id: новых демо-копий для
+тестовых id не больше 10 в час с одного адреса, дальше демо-вход отвечает 429.
+Проверка ассистента требует ключей Yandex на сервере: без них он выключен, отвечает
+без источников, и проверка честно не проходит.
 
 **Проверить файл валидатором организаторов**
 ([gitverse.ru/stasnorman/example-data-api](https://gitverse.ru/stasnorman/example-data-api)).
@@ -643,10 +648,10 @@ python ../example-data-api/validate_data_api.py DATA-API.yaml \
 `DATA_API_TOKEN_<РОЛЬ>`:
 
 ```bash
-export DATA_API_TOKEN_STUDENT="MaxInitData dev:990301:Expert"   # любой id 900000–999999
+export DATA_API_TOKEN_STUDENT="MaxInitData dev:990301:Expert"   # id 900000–999999, один на все прогоны
 python scripts/check_data_api.py                                  # стенд из api.baseUrl
 python scripts/check_data_api.py --base-url http://localhost:8000 # локальный запуск
-# Итог: 14 из 14 проверок прошли      (код выхода 0; 1 — есть провалы)
+# Итог: 15 из 15 проверок прошли      (код выхода 0; 1 — есть провалы)
 bash scripts/reset_demo.sh           # локально: убрать демо-копию, справку и тестовый аккаунт
 ```
 

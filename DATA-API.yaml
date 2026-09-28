@@ -3,16 +3,23 @@
 #
 # Сценарий: студент получает демо-профиль, подаёт заявку на справку об обучении,
 # справка выдаётся автоматически, PDF скачивается и проверяется по публичной ссылке;
-# ассистент отвечает по регламентам; тот же тестовый аккаунт включает роль
-# деканата и видит очередь заявок.
+# ассистент отвечает по регламентам со ссылкой на источник; нетиповая заявка (нужен
+# оригинал с печатью) уходит в деканат, тот же тестовый аккаунт включает роль
+# деканата и видит её в очереди.
 #
 # Роли:
 #   public  — без авторизации;
 #   student — заголовок Authorization в формате «MaxInitData dev:<id>:<Имя>»,
 #             где id из тестового диапазона 900000–999999 (вне диапазона — 401).
 #             Готовое значение передаётся через защищённый канал проверки, в этом
-#             файле секретов нет. Каждый прогон может брать новый id — аккаунт
-#             создаётся при первом запросе.
+#             файле секретов нет. Берите один и тот же id, например
+#             «MaxInitData dev:990301:Expert»: повторный прогон тем же аккаунтом
+#             проходит так же. Новых демо-копий для тестовых id — не больше 10 в час
+#             с одного адреса (DEMO_COPIES_PER_IP_HOUR), сверх лимита demo-login
+#             получит 429, и зависимые проверки не пройдут.
+#
+# Проверка assistant требует ключей Yandex Cloud на сервере: без них ассистент
+# выключен, отвечает без источников, и проверка не проходит — так и должно быть.
 #
 # Данные демо: синтетические студенты, группы и шаблоны документов (см. testdata/
 # и README, раздел «Что смоделировано»). Живой прогон: python scripts/check_data_api.py
@@ -209,6 +216,15 @@ checks:
     expected:
       statusCodes: [200]
       contentType: "application/json"
+      requiredFields: ["found", "valid"]
+      bodySchema:
+        type: "object"
+        required: ["found", "valid"]
+        properties:
+          found:
+            const: true
+          valid:
+            const: true
     timeoutMs: 5000
     repeatable: true
 
@@ -221,6 +237,12 @@ checks:
     expected:
       statusCodes: [200]
       contentType: "application/json"
+      bodySchema:
+        type: "array"
+        minItems: 1
+        items:
+          type: "object"
+          required: ["public_no", "status"]
     timeoutMs: 5000
     repeatable: true
 
@@ -240,8 +262,49 @@ checks:
       statusCodes: [200]
       contentType: "application/json"
       requiredFields: ["answer", "sources"]
+      bodySchema:
+        type: "object"
+        required: ["answer", "sources"]
+        properties:
+          sources:
+            type: "array"
+            minItems: 1
+            items:
+              type: "object"
+              required: ["title"]
     timeoutMs: 40000
     repeatable: true
+
+  - id: "create-manual-request"
+    name: "Нетиповая заявка уходит в деканат"
+    description: "Нужен оригинал с печатью — автоматически не выдаётся, заявка ждёт сотрудника"
+    method: "POST"
+    path: "/api/requests"
+    role: "student"
+    dependsOn: ["template-form"]
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        template_key: "study_certificate"
+        payload:
+          purpose: "По месту требования"
+          copies: 1
+          need_original: true
+    expected:
+      statusCodes: [201]
+      contentType: "application/json"
+      requiredFields: ["public_no", "status"]
+      bodySchema:
+        type: "object"
+        required: ["public_no", "status"]
+        properties:
+          status:
+            const: "SUBMITTED"
+    timeoutMs: 10000
+    repeatable: false
+    extract:
+      manualNo: "$.public_no"
 
   - id: "staff-role"
     name: "Роль деканата для демо-аккаунта"
@@ -259,17 +322,25 @@ checks:
 
   - id: "staff-queue"
     name: "Очередь заявок деканата"
+    description: "В очереди — нетиповая заявка из create-manual-request: демо-роль видит заявки своей копии"
     method: "GET"
     path: "/api/staff/requests"
     role: "student"
-    dependsOn: ["staff-role"]
+    dependsOn: ["staff-role", "create-manual-request"]
     expected:
       statusCodes: [200]
       contentType: "application/json"
+      bodySchema:
+        type: "array"
+        minItems: 1
+        items:
+          type: "object"
+          required: ["public_no", "status"]
     timeoutMs: 5000
     repeatable: true
 
 cleanup:
+  # Выданную справку не отменить — 409 здесь ожидаем
   - id: "cancel-request"
     method: "POST"
     path: "/api/requests/{public_no}/cancel"
@@ -279,4 +350,15 @@ cleanup:
         public_no: "${publicNo}"
     expected:
       statusCodes: [200, 409]
+    timeoutMs: 5000
+
+  - id: "cancel-manual-request"
+    method: "POST"
+    path: "/api/requests/{public_no}/cancel"
+    role: "student"
+    request:
+      path:
+        public_no: "${manualNo}"
+    expected:
+      statusCodes: [200]
     timeoutMs: 5000
