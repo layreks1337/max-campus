@@ -467,18 +467,25 @@ check("вебхук с чужим секретом отклоняется (403)"
 
 # Тело больше лимита не читается в память целиком: 413 ещё до обработчика.
 # Вебхук — без авторизации, раньше он принимал и 600 МБ.
-big = urllib.request.Request(
-    f"{BASE}/webhook/max", data=b"{" + b" " * (2 * 1024 * 1024) + b"}", method="POST",
-    headers={"Content-Type": "application/json"},
-)
+# Напрямую приложение отвечает 413. За прокси (Caddy на сервере) ответ часто не
+# успевает дойти: сервер отказывает по Content-Length и закрывает соединение, пока
+# клиент ещё шлёт тело, — клиент видит разрыв. Это тоже отказ. Таймаут — нет:
+# он значил бы, что сервер дочитывает и обрабатывает огромное тело.
+_u = urllib.parse.urlsplit(BASE)
+_conn_cls = http.client.HTTPSConnection if _u.scheme == "https" else http.client.HTTPConnection
+_big = b"{" + b" " * (2 * 1024 * 1024) + b"}"
 try:
-    with urllib.request.urlopen(big, timeout=60) as resp:
-        status = resp.status
-except urllib.error.HTTPError as exc:
-    status = exc.code
-except (urllib.error.URLError, ConnectionError) as exc:
-    status = f"соединение оборвано: {exc}"
-check("запрос больше 1 МБ отклоняется (413)", status == 413, f"получили {status}")
+    _conn = _conn_cls(_u.hostname, _u.port, timeout=30)
+    _conn.request("POST", (_u.path or "") + "/webhook/max", body=_big,
+                  headers={"Content-Type": "application/json"})
+    status = _conn.getresponse().status
+    _conn.close()
+    rejected, detail = status == 413, f"получили {status}"
+except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as exc:
+    rejected, detail = True, f"сервер разорвал соединение, не дочитав тело ({type(exc).__name__})"
+except (OSError, http.client.HTTPException) as exc:
+    rejected, detail = False, f"{type(exc).__name__}: {exc}"
+check("запрос больше 1 МБ отклоняется (413 или разрыв)", rejected, detail)
 
 section("14. Демо-вход для экспертов")
 # Свой id и имя: копия называется по профилю MAX. Id фиксированный — повторный
