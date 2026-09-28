@@ -1,21 +1,33 @@
 # Архитектура бэкенда
 
-> **Это проект, написанный до кода.** Идеи и контракты в силе, но часть решений
-> при реализации упростили — меньше сервисов, меньше мест, где что-то не поднимется.
-> Как устроено на самом деле — README («Архитектура», «Структура репозитория»)
-> и журнал решений. Главные расхождения:
+> **Это проект, написанный до кода.** Идеи в силе, но часть решений при реализации
+> упростили — меньше сервисов, меньше мест, где что-то не поднимется, — а часть
+> не сделали. Как устроено на самом деле — README («Архитектура», «Структура
+> репозитория», «Безопасность»), OpenAPI (`/api/openapi.json`, 57 операций),
+> `DATA-API.yaml` и журнал решений. Всё, что в тексте ниже расходится с кодом:
 >
 > | В проекте ниже | В коде |
 > |---|---|
 > | Alembic | Миграций нет: `create_all` при старте и идемпотентные `ALTER` (`main.py`) |
 > | ARQ + Redis | Фоновые задачи — asyncio-циклы в процессе приложения (`workers/scheduler.py`), очередь сообщений — таблица `outbox` в Postgres |
-> | Кеш initData в Redis | Словарь в памяти процесса на 5 минут (`core/deps.py`) |
+> | Кеш initData в Redis | Словарь в памяти процесса на 5 минут, срок подписи сверяется и на попадании в кеш (`core/deps.py`) |
 > | TTL initData 15 минут | Час (решение 052) |
 > | S3/MinIO | Том `/data` контейнера |
 > | WeasyPrint | fpdf2 + шрифт PT Sans: чистый Python, без системных библиотек (шапка `modules/requests/pdf.py`) |
-> | Модули `routes/service/repo` | Роуты в `api/`, логика в `modules/*/` |
-> | Запасные эмбеддинги e5 по `EMBEDDING_PROVIDER` | Не реализованы: только Yandex, вектор 256 (решения 018, 021) |
+> | Модули `routes/service/repo`, дерево проекта ниже | Роуты в `api/`, логика в `modules/*/` (requests, assistant, match, feed, notify, demo); модулей binding, calendar, matching, `workers/outbox.py`, `reminders.py`, `alembic/` нет — актуальное дерево в README |
+> | Тесты `tests/` | pytest-тестов нет: сквозной `scripts/smoke_test.py` (85 проверок) и регрессия ассистента `scripts/test_assistant.py` против поднятого сервиса |
+> | Запасные эмбеддинги e5 по `EMBEDDING_PROVIDER` | Не реализованы: только Yandex, вектор 256 (решения 018, 021); переменная удалена |
 > | Время по Иркутску в коде | `UNIVERSITY_TZ_HOURS` и `UNIVERSITY_NAME` в настройках (решение 066) |
+> | SDK `openai` (`AsyncOpenAI`) | Свой клиент на `httpx` к тому же OpenAI-совместимому эндпоинту (`modules/assistant/llm.py`); пакет `openai` не импортируется |
+> | `yandexgpt-lite` для классификации, реранка, суммаризации | Не используется: все вызовы — `yandexgpt/latest`, реранка и суммаризации нет |
+> | Проверка роли актора по `route_json` шаблона | `route_json` не читается: маршрут один на все шаблоны (`ALLOWED_TRANSITIONS`), роль проверяется по действию в эндпоинте (`core/deps.py`, решение 068) |
+> | `POST /api/assistant/message`, SSE-стрим | `POST /api/assistant/ask`, ответ целиком, не дольше 25 секунд (решение 060) |
+> | `POST /api/staff/events` | `POST /api/events` (организатор, вне демо-стенда) |
+> | `Idempotency-Key` и таблица ключей на 24 ч | Не сделано: повторная отправка создаёт вторую заявку |
+> | `sla-watchdog`, `notification_pref`, `ESCALATION_ANSWERED` | Не сделаны: просрочка видна фильтром очереди, настроек уведомлений нет |
+> | Лимит Bot API 30 rps | Держим 20 (`MAX_RATE_LIMIT_RPS`) |
+> | Вебхук: секрет, дедуп в Redis, обработка в очереди | Секрет — заголовок `X-Max-Bot-Api-Secret`; дедуп — словарь в памяти; апдейт обрабатывается в запросе, ответ бота на команду уходит сразу, уведомления — через `outbox` |
+> | Таблица контрактов API ниже | Заменена ссылкой на OpenAPI: в коде 57 операций, в проекте было 30 |
 
 Стек (реализация): **Python + FastAPI (async) · PostgreSQL 16 + pgvector · SQLAlchemy 2 · fpdf2 · Yandex AI Studio**
 
@@ -23,43 +35,29 @@
 
 ## Структура проекта
 
+Как в коде (подробнее — «Структура репозитория» в README):
+
 ```
-backend/
-├─ app/
-│  ├─ main.py                  FastAPI, роутеры, lifespan
-│  ├─ core/
-│  │  ├─ config.py             pydantic-settings
-│  │  ├─ security.py           validate_init_data, зависимости ролей
-│  │  └─ deps.py               get_current_student, get_staff
-│  ├─ db/
-│  │  ├─ models/               SQLAlchemy
-│  │  └─ session.py
-│  ├─ modules/
-│  │  ├─ binding/              routes · service · repo
-│  │  ├─ requests/             + engine.py (шаблоны, ФСМ) · pdf.py
-│  │  ├─ calendar/
-│  │  ├─ opportunities/
-│  │  ├─ matching/
-│  │  └─ assistant/
-│  │     ├─ tools.py           функции-инструменты
-│  │     ├─ rag.py             чанкинг, эмбеддинги, гибридный поиск
-│  │     ├─ prompts.py
-│  │     └─ service.py
-│  ├─ integrations/max/
-│  │  ├─ client.py             send_message, send_document, uploads
-│  │  └─ webhook.py
-│  └─ workers/
-│     ├─ outbox.py             пуши, rate limit 30 rps, бэкофф
-│     ├─ reminders.py          события 24ч/1ч, дедлайны 7/2 дня
-│     ├─ buddy.py
-│     └─ indexer.py            эмбеддинги базы знаний
-├─ alembic/
-├─ seed/
-└─ tests/
+backend/app/
+├─ main.py                  FastAPI, роутеры, lifespan, лимит размера запроса
+├─ core/                    config · security (подпись запуска, ссылка бота) ·
+│                           deps (текущий пользователь, роли) · limits · dates
+├─ db/                      models.py (все таблицы) · session.py
+├─ api/                     routes_*.py, schemas.py, serializers.py
+├─ modules/
+│  ├─ requests/             engine.py (шаблоны, машина состояний) · service.py · pdf.py
+│  ├─ assistant/            service · tools · rag · prompts · llm
+│  ├─ match/                колода, свайпы, наставники
+│  ├─ feed/                 скоринг возможностей
+│  ├─ notify/               outbox и его воркер
+│  └─ demo/                 демо-вход экспертов
+├─ integrations/max/        client.py (Bot API) · webhook.py
+├─ workers/scheduler.py     напоминания, наставники, сдвиг дат, сторож вебхука
+└─ seed/                    шаблоны, база знаний, демо-данные
 ```
 
-Каждый модуль — тройка `routes.py / service.py / repo.py`. Предсказуемо: любой в команде
-открывает чужой модуль и сразу понимает, где что.
+Проект ниже предполагал тройку `routes.py / service.py / repo.py` в каждом модуле;
+в коде роуты собраны в `api/`, а слоя `repo` нет — запросы SQLAlchemy в сервисах.
 
 ---
 
@@ -112,8 +110,8 @@ POST /api/binding/claim  { code: "A7K2-9M" }
   → вернуть профиль
 ```
 
-Коды генерятся скриптом из справочника `student`. Лимит попыток: **5 в час на пользователя**,
-иначе код брутфорсится за минуту.
+Коды генерятся скриптом из справочника `student`. Лимит попыток: **5 в час на пользователя**
+и 20 неудачных в час с одного адреса (решение 067).
 
 Защищённые эндпоинты без привязки отдают `409 BINDING_REQUIRED` — фронт по этому коду
 показывает онбординг.
@@ -121,7 +119,11 @@ POST /api/binding/claim  { code: "A7K2-9M" }
 ## Роли
 
 `STUDENT` · `STAFF_CLERK` · `STAFF_HEAD` · `ORGANIZER` · `MODERATOR` · `ADMIN`
-Берётся из таблицы `staff`, **никогда** из запроса.
+Берётся из таблицы `staff`, **никогда** из запроса, и проверяется по действию
+(`core/deps.py`, решение 068): очередь и статусы — `STAFF_CLERK`, `STAFF_HEAD`, `ADMIN`;
+«Готова» и выдача — `STAFF_HEAD`, `ADMIN`; события — `ORGANIZER`, `ADMIN`;
+модерация — `MODERATOR`, `ADMIN`. На демо-стенде (`DEMO_MODE`) события и модерация
+закрыты: коды сотрудников там публичные.
 
 ---
 
@@ -234,9 +236,10 @@ def validate_payload(fields: list[dict], payload: dict) -> dict:
 Тот же `fields` отдаётся фронту по `GET /api/requests/templates/{key}` — форма рендерится
 динамически. Один шаблон — одна правда о полях.
 
-Переходы статусов — только через `RequestService.transition()`: проверка легальности перехода,
-проверка роли актора по `route`, запись `request_event`, постановка задачи в `outbox`.
-Всё в одной транзакции.
+Переходы статусов — только через `engine.transition()`: проверка легальности перехода
+по `ALLOWED_TRANSITIONS`, запись `request_event`; уведомление в `outbox` ставит эндпоинт.
+Всё в одной транзакции. Роль проверяет эндпоинт до вызова движка; `route_json` шаблона
+(маршрут согласования по ролям) в коде не читается — маршрут один на все шаблоны.
 
 ---
 
@@ -321,7 +324,7 @@ async def get_my_requests(status: str | None = None) -> str:
 
 ### Провайдер: Yandex Foundation Models
 
-Ключ выдан пользователем. Интерфейс всё равно держим абстрактным:
+Ключ — сервисного аккаунта команды в Yandex Cloud. Интерфейс всё равно держим абстрактным:
 
 ```python
 class LLMProvider(Protocol):
@@ -329,7 +332,9 @@ class LLMProvider(Protocol):
     async def embed(self, texts: list[str], kind: str) -> list[list[float]]: ...
 ```
 
-**Используем OpenAI-совместимый эндпоинт, не нативный** (решение 017):
+**Используем OpenAI-совместимый эндпоинт, не нативный** (решение 017). В коде — свой
+клиент на `httpx` (`modules/assistant/llm.py`), пакет `openai` не нужен; ниже — тот же
+запрос через SDK, как он был в проекте:
 
 ```python
 from openai import AsyncOpenAI
@@ -352,8 +357,9 @@ resp = await client.chat.completions.create(
 `OpenAI-Project: <folder_id>`. **Без `folder_id` не работает ничего** — он входит
 и в `modelUri`, и в заголовок.
 
-Модели: `yandexgpt/latest` (Pro) для диалога, `yandexgpt-lite/latest` для дешёвых
-операций — классификация интента, реранк, суммаризация истории.
+Модели: `yandexgpt/latest` (Pro) — все вызовы. `yandexgpt-lite/latest` планировался
+для классификации, реранка и суммаризации истории; этих шагов в коде нет, и
+`LLM_MODEL_CHEAP` зарезервирован.
 
 **Запасной путь — нативный эндпоинт** `POST /foundationModels/v1/completion`,
 если OpenAI-совместимый подведёт. Схема другая:
@@ -382,15 +388,23 @@ resp = await client.chat.completions.create(
 
 *Причина выбора против локальных эмбеддингов:* снимает 1–2 ГБ RAM с деплоя и убирает
 риск «модель не влезла на VPS». Запасной вариант (`multilingual-e5-base`, 768)
-**не реализован**: переменная `EMBEDDING_PROVIDER` в `.env.example` зарезервирована
-и кодом не читается.
+**не реализован**, переменной `EMBEDDING_PROVIDER` больше нет.
 
 ---
 
 ## Контракты API
 
-| Метод | Путь | Кто | Описание |
-|---|---|---|---|
+Таблица методов из проекта устарела: в коде 57 операций на 49 путях, и не все
+совпадают с задуманными (см. расхождения в начале). Актуальный список — OpenAPI
+на стенде (`/api/openapi.json`, интерактивно — `/api/docs`) и сгруппированный
+перечень с ролями, кодами ошибок и лимитами в `DATA-API.yaml`.
+
+Ошибки единым конвертом: `{ "error": { "code", "message", "details"? } }`,
+полный список кодов — в `DATA-API.yaml`.
+
+**Типы для фронта:** `cd frontend && npm run api:types` (из живой схемы).
+
+---|---|---|---|
 | `POST` | `/api/binding/claim` | любой | Привязка по коду |
 | `GET` | `/api/me` | student | Профиль, роли, флаги |
 | `GET` | `/api/requests/templates` | student | Список шаблонов |
@@ -430,20 +444,27 @@ resp = await client.chat.completions.create(
 
 ---
 
-## Фоновые задачи (ARQ)
+## Фоновые задачи
 
-| Джоб | Расписание | Что делает |
+В коде — asyncio-циклы в процессе приложения (`workers/scheduler.py`), не ARQ:
+
+| Задача | Интервал | Что делает |
 |---|---|---|
-| `outbox-worker` | непрерывно | Отправка пушей, ретраи, rate limit 30 rps |
-| `event-reminders` | каждые 5 мин | События через 24 ч и 1 ч → outbox |
-| `deadline-reminders` | раз в сутки | Дедлайны возможностей за 7 и 2 дня |
-| `intent-expiry` | раз в сутки | Гасит протухшие интенты |
-| `buddy-matcher` | раз в час | Подбор наставников новым первокурсникам |
-| `kb-indexer` | по событию | Чанкинг + эмбеддинги при изменении документа |
-| `sla-watchdog` | раз в час | Просроченные заявки → уведомление деканату |
+| `outbox` | 3 с | Отправка сообщений, ретраи с бэкоффом, 20 rps |
+| `event_reminders` | 5 мин | События через 24 ч и 1 ч → outbox |
+| `deadline_reminders` | 1 ч | Дедлайны возможностей за 7 и 2 дня |
+| `class_reminders` | 4 мин | Первая пара через 15 минут |
+| `buddy` | 30 мин | Наставники новым первокурсникам + гашение протухших объявлений |
+| `demo_dates` | 10 мин | Раз в сутки сдвигает даты демо-данных (решение 065) |
+| `webhook_watchdog` | 30 мин | Сверяет подписку бота (только при `BOT_WEBHOOK_AUTOSUBSCRIBE`) |
+| `kb-index` | при старте | Индексация базы знаний, если `kb_chunk` пуста |
 
-Kinds для outbox: `REQUEST_STATUS` · `DOCUMENT_ISSUED` · `EVENT_REMINDER` ·
-`WAITLIST_PROMOTED` · `OPPORTUNITY_DEADLINE` · `MATCH_FOUND` · `BUDDY_ASSIGNED` · `ESCALATION_ANSWERED`
+`sla-watchdog` из проекта не сделан: просрочка видна фильтром очереди деканата.
+
+Kinds в outbox: `REQUEST_STATUS` · `DOCUMENT_ISSUED` · `EVENT_REMINDER` ·
+`EVENT_REGISTERED` · `WAITLIST_PROMOTED` · `OPPORTUNITY_DEADLINE` · `CLASS_REMINDER` ·
+`MATCH_FOUND` · `BUDDY_ASSIGNED` · `group_poll` · `share_event`
+(`ESCALATION_ANSWERED` из проекта не сделан).
 
 Тихие часы: не слать с 22:00 до 08:00, переносить на утро.
 
@@ -462,6 +483,10 @@ async def webhook(request: Request):
     await queue.enqueue("handle_update", body)
     return {"ok": True}                   # ← 200 за <200 мс, всегда
 ```
+
+В коде проще (`api/routes_public.py`, `integrations/max/webhook.py`): секрет — заголовок
+`X-Max-Bot-Api-Secret`, дедуп — словарь в памяти процесса, апдейт обрабатывается
+в том же запросе, ответ бота на команду уходит сразу, остальные сообщения — через outbox.
 
 1. Отвечать 200 сразу — иначе таймаут → ретрай → дубли сообщений пользователю
 2. Дедупликация обязательна — повторная доставка случается
@@ -487,5 +512,6 @@ async def webhook(request: Request):
 
 - **Идемпотентность** на всех мутациях: заголовок `Idempotency-Key`, таблица ключей на 24 ч.
   Мобильная сеть отваливается, пользователь жмёт второй раз — заявка задваивается.
+  *Не сделано:* повторная отправка создаёт вторую заявку.
 - **Аудит** действий сотрудников (`audit_log`) — кто выдал справку. Вопрос зададут.
 - **Feature-флаги** в конфиге — за день до сдачи недоделанное выключается строкой.

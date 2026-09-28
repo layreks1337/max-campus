@@ -2,8 +2,8 @@
 
 Все факты ниже подтверждены реальными вызовами **24.09.2026** с ключом из `.env`.
 Это не документация, а протокол проверки: что работает, что нет, и какие выводы для кода.
+Идентификатор каталога и ключ в документах не приводятся — они только в `.env`.
 
-Folder ID: `b1g9ovoht134i2ugveu8`
 Эндпоинт: `https://ai.api.cloud.yandex.net/v1/chat/completions` (OpenAI-совместимый)
 Заголовки: `Authorization: Api-Key <ключ>` + `OpenAI-Project: <folder_id>`
 
@@ -26,7 +26,7 @@ Folder ID: `b1g9ovoht134i2ugveu8`
 | **Отказ при отсутствии данных** | ✅ вернул дословно «Не знаю, уточните в деканате» |
 
 `modelUri` для эмбеддингов — префикс **`emb://`**, не `gpt://`:
-`emb://b1g9ovoht134i2ugveu8/text-search-doc/latest`
+`emb://<folder_id>/text-search-doc/latest`
 
 Ответ эмбеддинга: `{"embedding": [...256 float...], "numTokens": "17", ...}`
 
@@ -87,9 +87,10 @@ curl -s -X POST "$YC_OPENAI_BASE/chat/completions" \
    │   ┌────────────────────────────────────────────────┘
    ▼   ▼
 LLM: system = [роль + правила + профиль студента + НАЙДЕННЫЕ ФРАГМЕНТЫ]
-     tools  = только личные данные и действия
-             (get_my_requests, list_calendar_events, list_opportunities,
-              get_my_matches, register_for_event, start_request, escalate_to_human)
+     tools  = только личные данные и действия — 7 инструментов
+             (get_my_requests, list_request_templates, start_request,
+              list_events, list_opportunities, get_my_matches, escalate_to_human;
+              схемы — modules/assistant/tools.py)
 ```
 
 Что это даёт:
@@ -111,7 +112,9 @@ LLM: system = [роль + правила + профиль студента + Н�
 
 ## ⚠️ Проблема №3: нет prompt caching
 
-В ответе есть поле `usage.prompt_tokens_details.cached_tokens`, но оно стабильно `0`.
+В ответе есть поле `usage.prompt_tokens_details.cached_tokens`, но в проверке 24.09 оно
+стабильно `0` (в замере стоимости для `docs/05-rollout.md` позже — около половины входа:
+кеширование непостоянно, рассчитывать на него нельзя).
 
 Следствия для кода:
 - Не экономим на стабильном префиксе — системный промпт и описания тулов держать **компактными**
@@ -137,13 +140,11 @@ LLM: system = [роль + правила + профиль студента + Н�
 ## Итоговая конфигурация
 
 ```
-LLM_PROVIDER=yandex
 YC_OPENAI_BASE=https://ai.api.cloud.yandex.net/v1
-YC_FOLDER_ID=b1g9ovoht134i2ugveu8
-LLM_MODEL_MAIN=yandexgpt/latest          # диалог, tool calling
-LLM_MODEL_CHEAP=yandexgpt-lite/latest    # классификация, реранк, суммаризация
+YC_FOLDER_ID=<идентификатор каталога>
+LLM_MODEL_MAIN=yandexgpt/latest          # диалог, tool calling — все вызовы
+# LLM_MODEL_CHEAP=yandexgpt-lite/latest  # зарезервировано: код его не вызывает
 
-EMBEDDING_PROVIDER=yandex
 EMBEDDING_URL=https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding
 EMBEDDING_MODEL_DOC=text-search-doc/latest      # чанки при индексации
 EMBEDDING_MODEL_QUERY=text-search-query/latest  # запрос при поиске
@@ -151,5 +152,3 @@ EMBEDDING_DIM=256                                # ✅ подтверждено
 ```
 
 Столбец в БД: `kb_chunk.embedding vector(256)`
-
-**Ключ и folder ID засвечены в переписке — перевыпустить ключ перед демо.**
