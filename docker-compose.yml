@@ -41,8 +41,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # .env необязателен: на чистом клоне `docker compose up -d --build` поднимает всё
+    # с умолчаниями из backend/app/core/config.py — бот и ассистент выключены,
+    # остальное работает. Запись с required — Compose 2.24+ (решение 076).
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://campus:campus@db:5432/campus
       DATA_DIR: /data
@@ -75,6 +79,8 @@ services:
     logging: *default-logging
 
   # То же, но с постоянным адресом: бесплатный статический домен ngrok.
+  # ${VAR:-} здесь и ниже — пустое значение без предупреждения compose, когда .env
+  # нет или переменная не задана: профиль не запускается, и она не нужна.
   # В .env нужны NGROK_AUTHTOKEN и NGROK_DOMAIN (вида xxx.ngrok-free.app).
   # Запуск:  docker compose --profile ngrok up -d
   ngrok:
@@ -84,8 +90,8 @@ services:
     depends_on:
       - app
     environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
-    command: http app:8000 --url=https://${NGROK_DOMAIN}
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    command: http app:8000 --url=https://${NGROK_DOMAIN:-}
     restart: unless-stopped
     logging: *default-logging
 
@@ -101,9 +107,9 @@ services:
     depends_on:
       - app
     environment:
-      TUNA_TOKEN: ${TUNA_TOKEN}
+      TUNA_TOKEN: ${TUNA_TOKEN:-}
     # Инспектор выключен: он сохраняет запросы целиком, включая данные авторизации MAX.
-    command: http app:8000 --subdomain=${TUNA_SUBDOMAIN} --location=ru --https-redirect --inspect=false
+    command: http app:8000 --subdomain=${TUNA_SUBDOMAIN:-} --location=ru --https-redirect --inspect=false
     restart: unless-stopped
     logging: *default-logging
 
@@ -119,7 +125,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    command: caddy reverse-proxy --from ${PUBLIC_HOST} --to app:8000
+    command: caddy reverse-proxy --from ${PUBLIC_HOST:-} --to app:8000
     volumes:
       - caddy_data:/data
       - caddy_config:/config
