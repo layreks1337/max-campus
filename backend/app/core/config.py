@@ -113,11 +113,11 @@ class Settings(BaseSettings):
     UPLOADS_TOTAL_MB: int = 500
 
     # ── LLM ───────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "yandex"
     YC_API_KEY: str = ""
     YC_FOLDER_ID: str = ""
     YC_OPENAI_BASE: str = "https://ai.api.cloud.yandex.net/v1"
     LLM_MODEL_MAIN: str = "yandexgpt/latest"
+    # Зарезервировано: llm.chat(cheap=True) никто не вызывает, все ответы — main
     LLM_MODEL_CHEAP: str = "yandexgpt-lite/latest"
 
     EMBEDDING_URL: str = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
@@ -137,6 +137,10 @@ class Settings(BaseSettings):
     # вызов Yandex: без лимита один скрипт сожжёт баланс за две недели проверки.
     ASSISTANT_RATE_LIMIT: int = 20
     ASSISTANT_RATE_WINDOW_SECONDS: int = 600
+    # Тестовые id браузерного входа придумываются без счёта, и лимит на
+    # пользователя скрипт обошёл бы сменой id. Для них — ещё и лимит с одного
+    # адреса за то же окно. Аккаунты MAX ограничены только своим лимитом.
+    ASSISTANT_RATE_LIMIT_PER_IP: int = 40
 
     @property
     def model_uri_main(self) -> str:

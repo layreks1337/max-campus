@@ -15,8 +15,9 @@ from app.api.schemas import (
     ChatMessageOut,
     SourceOut,
 )
-from app.core.config import settings
+from app.core.config import is_test_user_id, settings
 from app.core.deps import BoundUserDep, SessionDep
+from app.core.limits import SlidingWindow, client_ip
 from app.db.models import AiMessage, Conversation
 from app.modules.assistant import service as assistant
 from app.modules.assistant.prompts import SUGGESTIONS
@@ -26,13 +27,18 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 
 @router.post("/ask", response_model=AskOut, summary="Задать вопрос ассистенту")
-async def ask(body: AskIn, current: BoundUserDep, session: SessionDep) -> AskOut:
+async def ask(
+    body: AskIn, request: HttpRequest, current: BoundUserDep, session: SessionDep
+) -> AskOut:
+    # Тестовый вход — ещё и лимит с адреса: сменой id лимит на пользователя не обойти
+    test_login = is_test_user_id(current.app_user.max_user_id)
     try:
         answer = await assistant.ask(
             session,
             student=current.student,
             app_user_id=current.app_user.id,
             question=body.question.strip(),
+            rate_ip=client_ip(request) if test_login else None,
         )
     except assistant.RateLimited as exc:
         raise HTTPException(
@@ -118,6 +124,12 @@ async def assistant_status() -> dict:
 
 MAX_AUDIO_BYTES = 16_000 * 2 * 30  # 30 секунд моно PCM 16 кГц
 
+# Распознавание — платный вызов SpeechKit: те же лимиты, что у вопросов
+_voice_by_user = SlidingWindow(settings.ASSISTANT_RATE_LIMIT, settings.ASSISTANT_RATE_WINDOW_SECONDS)
+_voice_by_ip = SlidingWindow(
+    settings.ASSISTANT_RATE_LIMIT_PER_IP, settings.ASSISTANT_RATE_WINDOW_SECONDS
+)
+
 
 @router.post("/transcribe", summary="Распознать голосовой вопрос")
 async def transcribe(request: HttpRequest, current: BoundUserDep) -> dict:
@@ -126,6 +138,14 @@ async def transcribe(request: HttpRequest, current: BoundUserDep) -> dict:
     который отдаёт MediaRecorder, он не понимает."""
     if not settings.llm_enabled:
         raise HTTPException(503, detail={"code": "UNAVAILABLE", "message": "Распознавание речи не настроено"})
+    ip = client_ip(request) if is_test_user_id(current.app_user.max_user_id) else None
+    if (ip is not None and not _voice_by_ip.allowed(ip)) or not _voice_by_user.take(current.app_user.id):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "RATE_LIMITED", "message": "Слишком много голосовых вопросов — напишите текстом"},
+        )
+    if ip is not None:
+        _voice_by_ip.hit(ip)
     audio = await request.body()
     if len(audio) < 3200:
         raise HTTPException(422, detail={"code": "TOO_SHORT", "message": "Запись слишком короткая"})

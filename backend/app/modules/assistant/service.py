@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.limits import SlidingWindow
 from app.db.models import AiMessage, Conversation, Student, utcnow
 from app.modules.assistant import rag
 from app.modules.assistant import tools as tools_mod
@@ -83,12 +84,21 @@ class RateLimited(Exception):
 # Как и у лимита кодов привязки: память процесса, рестарт обнуляет — для
 # защиты баланса от скрипта этого достаточно.
 _asked: dict[int, deque[float]] = defaultdict(deque)
+# Вопросы тестовых id с одного адреса (решение 067): их id не стоят ничего
+_asked_by_ip = SlidingWindow(
+    settings.ASSISTANT_RATE_LIMIT_PER_IP, settings.ASSISTANT_RATE_WINDOW_SECONDS
+)
 
 
-def check_rate(app_user_id: int) -> None:
-    """Учитывает вопрос или поднимает RateLimited, если лимит исчерпан."""
+def check_rate(app_user_id: int, ip: str | None = None) -> None:
+    """Учитывает вопрос или поднимает RateLimited, если лимит исчерпан.
+
+    ip — адрес клиента, если вход тестовый: тогда действует и лимит с адреса.
+    """
     now = time.monotonic()
     window = settings.ASSISTANT_RATE_WINDOW_SECONDS
+    if ip is not None and not _asked_by_ip.allowed(ip):
+        raise RateLimited(window)
 
     if len(_asked) > 2048:
         # Разовая уборка: иначе словарь копит всех, кто когда-то спрашивал
@@ -101,6 +111,8 @@ def check_rate(app_user_id: int) -> None:
     if len(stamps) >= settings.ASSISTANT_RATE_LIMIT:
         raise RateLimited(max(1, math.ceil(stamps[0] + window - now)))
     stamps.append(now)
+    if ip is not None:
+        _asked_by_ip.hit(ip)
 
 
 def _minutes(n: int) -> str:
@@ -226,6 +238,7 @@ async def ask(
     student: Student,
     app_user_id: int,
     question: str,
+    rate_ip: str | None = None,
 ) -> AssistantAnswer:
     """Основной вход. RAG выполняется всегда, до обращения к модели.
 
@@ -247,7 +260,8 @@ async def ask(
     answer: AssistantAnswer | None = None
     try:
         answer = await _ask(
-            session, student=student, app_user_id=app_user_id, question=question
+            session, student=student, app_user_id=app_user_id, question=question,
+            rate_ip=rate_ip,
         )
         return answer
     finally:
@@ -263,8 +277,9 @@ async def _ask(
     student: Student,
     app_user_id: int,
     question: str,
+    rate_ip: str | None = None,
 ) -> AssistantAnswer:
-    check_rate(app_user_id)
+    check_rate(app_user_id, rate_ip)
 
     conv = await _get_or_create_conversation(session, app_user_id)
     history = await _load_history(session, conv.id)
