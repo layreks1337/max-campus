@@ -161,6 +161,41 @@ export const STATUS_TITLES: Record<string, string> = {
   CANCELLED: "Отменена",
 };
 
+/* ── Данные заявки: подписи и значения ──────────────────────────── */
+
+/** Поля, которых нет в шаблоне: их дописывает сервер (ответ на уточнение,
+ *  обращение из чата). Остальные подписи приходят с заявкой из шаблона. */
+const SYSTEM_FIELD_LABELS: Record<string, string> = {
+  clarification: "Уточнение",
+  question: "Вопрос",
+  source: "Источник",
+};
+
+function formatPayloadValue(v: unknown): string {
+  if (typeof v === "boolean") return v ? "да" : "нет";
+  if (v === null || v === undefined || v === "") return "—";
+  const s = String(v);
+  // Имя загруженного файла бессмысленно показывать целиком
+  if (/^\d+_[0-9a-f]{12}\.\w+$/.test(s)) return "файл приложен";
+  return s;
+}
+
+/** Строки «подпись — значение» для блока «Что указано в заявке». Общие для
+ *  студента и деканата: раньше у сотрудника были видны commissariat и
+ *  need_original вместо подписей. */
+export function payloadRows(request: {
+  payload: Record<string, unknown>;
+  field_labels?: Record<string, string>;
+}): Array<{ key: string; label: string; value: string }> {
+  return Object.entries(request.payload)
+    .filter(([k]) => !k.startsWith("_"))
+    .map(([k, v]) => ({
+      key: k,
+      label: request.field_labels?.[k] ?? SYSTEM_FIELD_LABELS[k] ?? k,
+      value: formatPayloadValue(v),
+    }));
+}
+
 export function haptic(): void {
   try {
     navigator.vibrate?.(8);

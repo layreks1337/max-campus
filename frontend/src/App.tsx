@@ -131,8 +131,10 @@ export default function App() {
     return setBackButton(() => navigate(-1));
   }, [location.pathname, navigate]);
 
+  // Сотруднику — пятая вкладка, а не замена «Чата»: у демо-профиля роль
+  // деканата не выключается, и ассистент иначе пропадал бы до конца сессии
   const tabs = useMemo(
-    () => (me?.staff ? [...STUDENT_TABS.slice(0, 3), STAFF_TAB] : STUDENT_TABS),
+    () => (me?.staff ? [...STUDENT_TABS, STAFF_TAB] : STUDENT_TABS),
     [me?.staff],
   );
 

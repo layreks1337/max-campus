@@ -42,7 +42,10 @@ export function ExpandingTabs({
         role="tablist"
         aria-label="Разделы приложения"
         className={cn(
-          "pointer-events-auto flex max-w-[calc(100vw-1.5rem)] items-center gap-2",
+          // Пять вкладок (у сотрудника) на экране 360 px помещаются только
+          // с узким зазором
+          "pointer-events-auto flex max-w-[calc(100vw-1.5rem)] items-center",
+          tabs.length > 4 ? "gap-1" : "gap-2",
           "rounded-full border border-hairline bg-canvas-soft/85 p-1.5 backdrop-blur-xl",
           "shadow-lift-strong",
         )}

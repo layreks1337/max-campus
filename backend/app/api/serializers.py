@@ -92,6 +92,11 @@ def request_out(r: Request, *, with_student: bool = False) -> RequestOut:
         updated_at=r.updated_at,
         due_at=r.due_at,
         payload=r.payload_json or {},
+        field_labels={
+            f["name"]: f.get("label") or f["name"]
+            for f in (r.template.fields or [])
+            if isinstance(f, dict) and f.get("name")
+        },
         events=[
             RequestEventOut(
                 to_status=e.to_status,

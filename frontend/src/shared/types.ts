@@ -117,6 +117,8 @@ export interface CampusRequest {
   updated_at: string;
   due_at: string | null;
   payload: Record<string, unknown>;
+  /** Подписи полей из шаблона заявки: имя поля → «Военкомат» */
+  field_labels?: Record<string, string>;
   events: RequestEvent[];
   document: DocumentInfo | null;
   student_name?: string | null;

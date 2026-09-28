@@ -224,8 +224,20 @@ export function closeApp(): boolean {
 }
 
 export function openExternal(url: string): void {
-  if (window.WebApp?.openLink) window.WebApp.openLink(url);
-  else window.open(url, "_blank", "noopener");
+  // Только веб-ссылки: `javascript:` и прочие схемы из данных не открываем
+  let href: string;
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
+    href = parsed.href;
+  } catch {
+    return;
+  }
+  // Скрипт MAX Bridge создаёт WebApp.openLink и в обычном браузере, но там
+  // вызов теряется («транспорт недоступен»): кнопки «Открыть PDF», «Маршрут»,
+  // «В календарь» молчали. Вне MAX открываем сами.
+  if (isInsideMax() && window.WebApp?.openLink) window.WebApp.openLink(href);
+  else window.open(href, "_blank", "noopener");
 }
 
 /** Формат стартового параметра по документации MAX: латиница, цифры, «_» и «-». */

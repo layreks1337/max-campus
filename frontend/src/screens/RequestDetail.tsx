@@ -23,6 +23,7 @@ import {
   haptic,
   dateFullRu,
   dateTimeRu,
+  payloadRows,
   relativeDay,
   statusTone,
   STATUS_FLOW,
@@ -209,14 +210,12 @@ export default function RequestDetail() {
         <Card className="mb-4">
           <p className="mb-3 text-[13px] font-semibold text-muted">Что указано в заявке</p>
           <div className="flex flex-col gap-2.5">
-            {Object.entries(request.payload)
-              .filter(([k]) => !k.startsWith("_"))
-              .map(([k, v]) => (
-                <div key={k} className="flex items-baseline justify-between gap-4">
-                  <span className="shrink-0 text-[13px] text-faint">{fieldLabel(k)}</span>
-                  <span className="text-right text-[14px] text-ink">{formatValue(v)}</span>
-                </div>
-              ))}
+            {payloadRows(request).map((row) => (
+              <div key={row.key} className="flex items-baseline justify-between gap-4">
+                <span className="max-w-[55%] text-[13px] text-faint">{row.label}</span>
+                <span className="text-right text-[14px] text-ink">{row.value}</span>
+              </div>
+            ))}
           </div>
         </Card>
       )}
@@ -403,42 +402,6 @@ function useReplay(request: CampusRequest | null, fresh: boolean): number | null
   }, [active, stage, lastStage, no]);
 
   return active ? stage : null;
-}
-
-/* ── Человекочитаемые подписи полей ────────────────────────────── */
-
-const FIELD_LABELS: Record<string, string> = {
-  purpose: "Куда",
-  copies: "Экземпляров",
-  need_original: "Оригинал",
-  comment: "Комментарий",
-  category: "Основание",
-  reason: "Причина",
-  period: "Период",
-  commissariat: "Военкомат",
-  employer: "Работодатель",
-  session: "Сессия",
-  action: "Действие",
-  priority_ground: "Льгота",
-  details: "Описание",
-  doc_scan: "Документ",
-  start_date: "Дата начала",
-  question: "Вопрос",
-  source: "Источник",
-  clarification: "Уточнение",
-};
-
-function fieldLabel(key: string): string {
-  return FIELD_LABELS[key] ?? key;
-}
-
-function formatValue(v: unknown): string {
-  if (typeof v === "boolean") return v ? "да" : "нет";
-  if (v === null || v === undefined || v === "") return "—";
-  const s = String(v);
-  // Имя загруженного файла бессмысленно показывать целиком
-  if (/^\d+_[0-9a-f]{12}\.\w+$/.test(s)) return "файл приложен";
-  return s;
 }
 
 /* ── Справка готова ────────────────────────────────────────────── */

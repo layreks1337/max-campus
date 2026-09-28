@@ -151,6 +151,9 @@ class RequestOut(BaseModel):
     updated_at: datetime
     due_at: datetime | None
     payload: dict[str, Any] = Field(default_factory=dict)
+    # Подписи полей из шаблона: «Военкомат», а не commissariat. Новый вид справки
+    # добавляется строкой в базе — и подписи приезжают вместе с ним.
+    field_labels: dict[str, str] = Field(default_factory=dict)
     events: list[RequestEventOut] = Field(default_factory=list)
     document: DocumentOut | None = None
     student_name: str | None = None

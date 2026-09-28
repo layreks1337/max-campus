@@ -17,7 +17,7 @@ import { Card, CardSkeleton, Chip, Divider, Empty } from "@/components/ui/primit
 import { useToast } from "@/components/ui/toast";
 import { api, ApiException } from "@/shared/api";
 import type { CampusRequest, Me, TicketCheck } from "@/shared/types";
-import { cn, dateTimeRu, haptic, STATUS_TITLES } from "@/shared/utils";
+import { cn, dateTimeRu, haptic, payloadRows, STATUS_TITLES } from "@/shared/utils";
 
 const FILTERS = [
   { key: "", label: "Все в работе" },
@@ -202,16 +202,12 @@ function StaffSheet({
         <>
           <p className="mb-2 text-[13px] font-semibold text-muted">Данные заявки</p>
           <div className="mb-5 flex flex-col gap-2 rounded-[16px] bg-field p-4">
-            {Object.entries(request.payload)
-              .filter(([k]) => !k.startsWith("_"))
-              .map(([k, v]) => (
-                <div key={k} className="flex items-baseline justify-between gap-4">
-                  <span className="shrink-0 text-[13px] text-faint">{k}</span>
-                  <span className="text-right text-[14px] text-ink">
-                    {typeof v === "boolean" ? (v ? "да" : "нет") : String(v || "—")}
-                  </span>
-                </div>
-              ))}
+            {payloadRows(request).map((row) => (
+              <div key={row.key} className="flex items-baseline justify-between gap-4">
+                <span className="max-w-[55%] text-[13px] text-faint">{row.label}</span>
+                <span className="text-right text-[14px] text-ink">{row.value}</span>
+              </div>
+            ))}
           </div>
         </>
       )}
