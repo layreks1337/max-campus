@@ -221,11 +221,15 @@
   transform-origin: top left;
 }
 
-/* Карусель афиши отъезжает вглубь, когда страницу листают дальше */
+/* Карусель афиши отъезжает вглубь, когда страницу листают дальше. Отсчёт — от
+   положения самой карусели (view), а не от пикселей прокрутки: над ней может
+   появиться новый блок, и зашитый диапазон начинал бы гасить её посреди экрана.
+   Пока карусель видна целиком, она не тронута; уходит — когда её верх
+   пересёк верх экрана. */
 .sda .scroll-recede {
   animation: carousel-recede linear both;
-  animation-timeline: scroll(root);
-  animation-range: 260px 760px;
+  animation-timeline: view();
+  animation-range: exit 0% exit 100%;
 }
 
 .js-reveal .reveal {
