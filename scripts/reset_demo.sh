@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Сбрасывает следы прогонов: привязки живых пользователей, заявки, документы,
-# свайпы, диалоги ассистента и демо-копии студентов (DEMO-*) с их баллами,
-# опросами и голосами. Справочники, шаблоны и база знаний остаются.
+# свайпы, диалоги ассистента, опросы групп (кроме заложенного сидом) и демо-копии
+# студентов (DEMO-*) с их баллами и голосами. Справочники, шаблоны и база знаний
+# остаются.
 #
 # Нужен, когда демонстрацию показывают несколько раз подряд и коды привязки
 # должны снова стать доступными.
@@ -55,6 +56,12 @@ DELETE FROM binding_code WHERE student_id IN (SELECT id FROM demo_students);
 DELETE FROM binding WHERE student_id IN (SELECT id FROM demo_students);
 DELETE FROM student WHERE id IN (SELECT id FROM demo_students);
 
+-- Опросы групп: остаётся только заложенный сидом (самый первый, «Когда удобнее
+-- отработка по матанализу?»). Иначе опросы, созданные живыми аккаунтами под
+-- кодом старосты (A7K2-9M), видел бы каждый эксперт в «Группа спрашивает».
+DELETE FROM poll_vote WHERE poll_id <> (SELECT min(id) FROM group_poll);
+DELETE FROM group_poll WHERE id <> (SELECT min(id) FROM group_poll);
+
 -- Очередь уведомлений
 DELETE FROM outbox;
 DELETE FROM audit_log;
@@ -69,6 +76,7 @@ SELECT 'свободных кодов привязки' AS показатель,
   FROM binding_code WHERE used_at IS NULL
 UNION ALL SELECT 'заявок', count(*)::text FROM request
 UNION ALL SELECT 'демо-копий студентов', count(*)::text FROM student WHERE record_book_no LIKE 'DEMO-%'
+UNION ALL SELECT 'опросов групп', count(*)::text FROM group_poll
 UNION ALL SELECT 'объявлений в колоде', count(*)::text FROM intent WHERE active
 UNION ALL SELECT 'событий', count(*)::text FROM calendar_event
 UNION ALL SELECT 'чанков базы знаний', count(*)::text FROM kb_chunk;"
